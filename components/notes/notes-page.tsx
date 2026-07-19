@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import { EditorContent, useEditor } from "@tiptap/react";
+import { TextSelection } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Link from "@tiptap/extension-link";
@@ -15,7 +16,7 @@ import CharacterCount from "@tiptap/extension-character-count";
 import {
   ArrowLeft, Bold, BookOpen, Briefcase, Check, CheckSquare, ChevronDown, Code2, Copy, FileText, Heading1, Heading2,
   Heading3, Highlighter, Italic, Lightbulb, Link2, List, ListOrdered, LoaderCircle, MoreHorizontal, Palette,
-  Pin, Plus, Quote, Redo2, RefreshCcw, RotateCcw, Search, Sparkles, Strikethrough, Trash2, Underline as UnderlineIcon,
+  Mic, Pin, Plus, Quote, Redo2, RefreshCcw, RotateCcw, Search, Sparkles, Strikethrough, Trash2, Underline as UnderlineIcon,
   Star, Undo2, WandSparkles, X,
 } from "lucide-react";
 import {
@@ -24,6 +25,8 @@ import {
 } from "@/app/notes/actions";
 import { formatNoteTime, NOTE_COLORS, NOTE_ICONS, sortNotes, type Note, type NoteIcon, type RefineAction, type RefineTone, type TiptapDocument } from "@/lib/notes-domain";
 import { SlashCommand } from "@/components/notes/slash-command";
+import { useAssemblyAIStreaming } from "@/components/notes/use-assemblyai-streaming";
+import { transcriptWithBoundarySpacing } from "@/lib/assemblyai-streaming";
 
 type Mode = "active" | "pinned" | "trash";
 type SaveStatus = "saved" | "dirty" | "saving" | "error";
@@ -214,6 +217,7 @@ function NoteEditor({ note, onSaved, registerFlush, back }: { note: Note; onSave
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const running = useRef<Promise<void> | null>(null);
   const titleRef = useRef(title);
+  const voiceInsertionRef = useRef<number | null>(null);
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -235,7 +239,24 @@ function NoteEditor({ note, onSaved, registerFlush, back }: { note: Note; onSave
       setWords(instance.storage.characterCount.words());
       queueSave(titleRef.current, instance.getJSON() as TiptapDocument);
     },
+    onSelectionUpdate: ({ editor: instance }) => {
+      if (instance.isFocused) voiceInsertionRef.current = instance.state.selection.from;
+    },
   });
+
+  const insertVoiceTranscript = useCallback((transcript: string) => {
+    if (!editor) return;
+    const documentEnd = TextSelection.atEnd(editor.state.doc).from;
+    const position = Math.max(1, Math.min(voiceInsertionRef.current ?? documentEnd, documentEnd));
+    const before = position > 0 ? editor.state.doc.textBetween(position - 1, position, "\0") : "";
+    const after = position < editor.state.doc.content.size ? editor.state.doc.textBetween(position, position + 1, "\0") : "";
+    const insertion = transcriptWithBoundarySpacing(transcript, before, after);
+    if (!insertion) return;
+    editor.view.dispatch(editor.state.tr.insertText(insertion, position));
+    voiceInsertionRef.current = position + insertion.length;
+  }, [editor]);
+
+  const voice = useAssemblyAIStreaming({ onFinalTranscript: insertVoiceTranscript });
 
   const flush = useCallback(async () => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
@@ -280,18 +301,45 @@ function NoteEditor({ note, onSaved, registerFlush, back }: { note: Note; onSave
     queueSave("Untitled Note");
   };
 
+  const startVoiceRecording = () => {
+    if (!editor) return;
+    voiceInsertionRef.current = editor.isFocused ? editor.state.selection.from : TextSelection.atEnd(editor.state.doc).from;
+    void voice.startRecording();
+  };
+
   if (!editor) return <div className="editor-loading"><LoaderCircle className="spin" size={22} /> Opening note…</div>;
 
   return <section className="note-editor">
+    {(voice.error || voice.notice) && <div className={`notes-toast ${voice.notice ? "voice-notice" : ""}`} role="status">
+      {voice.error || voice.notice}
+      <button aria-label="Dismiss" onClick={voice.notice ? voice.clearNotice : voice.clearError}><X size={13} /></button>
+    </div>}
     <header className="note-editor-head">
       <button className="notes-mobile-back" onClick={back}><ArrowLeft size={16} /> Notes</button>
       <div className="note-title-wrap" style={{ "--note-color": note.color } as React.CSSProperties}><span className="note-title-icon"><NoteGlyph icon={note.icon} size={14} /></span><input value={title} maxLength={160} aria-label="Note title" onChange={(event) => changeTitle(event.target.value)} onBlur={normalizeTitle} /></div>
+      <button
+        type="button"
+        className={`speak-to-note ${voice.isRecording ? "recording" : ""}`}
+        disabled={voice.isBusy}
+        aria-pressed={voice.isRecording}
+        aria-label={voice.isRecording ? "Stop recording" : "Speak to Note"}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => voice.isRecording ? voice.stopRecording() : startVoiceRecording()}
+      >
+        <span className="voice-mic"><Mic size={13} /></span>
+        <span>{voice.status === "stopping" ? "Stopping…" : voice.isRecording ? "Stop Recording" : "Speak to Note"}</span>
+      </button>
       <div className={`save-state ${status}`} title={status === "error" ? "Save failed" : undefined}>
         {status === "saving" ? <LoaderCircle className="spin" size={12} /> : status === "error" ? <button onClick={() => void flush().catch(() => undefined)}><RotateCcw size={12} /> Retry</button> : <Check size={12} />}
         {status === "saving" ? "Saving…" : status === "error" ? "Couldn't save" : status === "dirty" ? "Unsaved" : "Saved"}
       </div>
     </header>
     <EditorToolbar editor={editor} />
+    {!["idle", "error"].includes(voice.status) && <div className="voice-preview" role="status" aria-live="polite">
+      <span className="voice-preview-icon"><Mic size={12} /></span>
+      <div><strong>{voice.status === "recording" ? "Listening" : voice.status === "stopping" ? "Finishing transcript" : "Starting live transcription"}</strong><span>{voice.preview || (voice.status === "recording" ? "Start speaking—your words will appear here." : "Securely connecting to AssemblyAI…")}</span></div>
+      {voice.isRecording && voice.status !== "stopping" && <button type="button" onClick={() => voice.stopRecording()}>Stop</button>}
+    </div>}
     <div className="editor-scroll">
       <div className="editor-page">
         <BubbleMenu editor={editor} shouldShow={({ from, to }) => from !== to && !editor.isActive("codeBlock")} options={{ placement: "top", strategy: "fixed" }}>
