@@ -3,8 +3,8 @@ import "./globals.css";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Next.js Premium Startup Boilerplate",
-  description: "Created using the ultimate interactive Next.js stack generator CLI.",
+  title: "Flowspace — Your ideas, in motion",
+  description: "A calm, visual workspace for notes, tasks, pages, and ideas.",
 };
 
 export default function RootLayout({
@@ -15,7 +15,7 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en">
-        <body style={{ margin: 0, padding: 0 }}>
+        <body>
           {children}
         </body>
       </html>
