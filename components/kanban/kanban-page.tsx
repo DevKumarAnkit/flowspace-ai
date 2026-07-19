@@ -23,6 +23,7 @@ import {
   Columns3,
   GripVertical,
   LayoutPanelLeft,
+  MessageCircle,
   MoreHorizontal,
   NotebookPen,
   Palette,
@@ -50,6 +51,7 @@ import {
   updateKanbanLabelAction,
 } from "@/app/kanban/actions";
 import { KANBAN_COLORS, todayLocal, type KanbanBoard, type KanbanData, type KanbanPriority, type KanbanTask, type KanbanTaskInput } from "@/lib/kanban-types";
+import { announceKanbanMutation, CollaborationToolbar, KanbanRoom, TaskCommentBadge, TaskComments } from "@/components/kanban/collaboration";
 
 type TaskDraft = KanbanTaskInput;
 
@@ -84,14 +86,16 @@ function taskDraft(task: KanbanTask): TaskDraft {
   };
 }
 
-export function KanbanPage({ initialData, initialSelectedBoardId }: { initialData: KanbanData; initialSelectedBoardId: number | null }) {
+export function KanbanPage({ initialData, initialSelectedBoardId, initialToday }: { initialData: KanbanData; initialSelectedBoardId: number | null; initialToday: string }) {
   const router = useRouter();
   const [boards, setBoards] = useState(initialData.boards);
   const [selectedId, setSelectedId] = useState(initialSelectedBoardId);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [boardEditor, setBoardEditor] = useState<KanbanBoard | "new" | null>(null);
   const [taskEditor, setTaskEditor] = useState<TaskDraft | null>(null);
+  const [focusComments, setFocusComments] = useState(false);
   const [deleteColumn, setDeleteColumn] = useState<number | null>(null);
+  const [renameColumn, setRenameColumn] = useState<{ id: number; name: string } | null>(null);
   const [newColumnName, setNewColumnName] = useState("");
   const [activeTask, setActiveTask] = useState<KanbanTask | null>(null);
   const [message, setMessage] = useState("");
@@ -111,6 +115,7 @@ export function KanbanPage({ initialData, initialSelectedBoardId }: { initialDat
       try {
         const value = await action();
         after?.(value);
+        if (selected) announceKanbanMutation(selected.id);
         setMessage(success);
         router.refresh();
       } catch (error) {
@@ -157,6 +162,7 @@ export function KanbanPage({ initialData, initialSelectedBoardId }: { initialDat
     startTransition(async () => {
       try {
         await moveKanbanTaskAction(selected.id, taskId, target.id, orders);
+        announceKanbanMutation(selected.id);
         router.refresh();
       } catch (error) {
         setBoards(snapshot);
@@ -171,7 +177,7 @@ export function KanbanPage({ initialData, initialSelectedBoardId }: { initialDat
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  return (
+  const content = (
     <div className="kanban-content">
       <div className="kanban-heading">
         <div><p>MAKE SPACE FOR PROGRESS</p><h1>Task boards</h1></div>
@@ -196,7 +202,7 @@ export function KanbanPage({ initialData, initialSelectedBoardId }: { initialDat
           {!selected ? <EmptyBoard onCreate={() => setBoardEditor("new")} /> : <>
             <div className="board-toolbar">
               <div><i style={{ background: selected.color }} /><div><h2>{selected.name}</h2><span>{selected.columns.reduce((sum, column) => sum + column.tasks.length, 0)} tasks · {selected.columns.length} columns</span></div></div>
-              <form className="new-column-form" onSubmit={(event) => {
+              <div className="board-toolbar-actions"><CollaborationToolbar boardId={selected.id} isOwner={selected.accessRole === "owner"} /><form className="new-column-form" onSubmit={(event) => {
                 event.preventDefault();
                 const name = newColumnName.trim();
                 if (!name || selected.columns.length >= 5) return;
@@ -205,16 +211,13 @@ export function KanbanPage({ initialData, initialSelectedBoardId }: { initialDat
                   setBoards((current) => current.map((board) => board.id === selected.id ? { ...board, columns: [...board.columns, column] } : board));
                   setNewColumnName("");
                 });
-              }}><input aria-label="New column name" maxLength={40} value={newColumnName} onChange={(event) => setNewColumnName(event.target.value)} placeholder={selected.columns.length >= 5 ? "Column limit reached" : "New column name"} disabled={selected.columns.length >= 5 || pending} /><button type="submit" disabled={!newColumnName.trim() || selected.columns.length >= 5 || pending}><Columns3 size={14} /> Add <small>{selected.columns.length}/5</small></button></form>
+              }}><input aria-label="New column name" maxLength={40} value={newColumnName} onChange={(event) => setNewColumnName(event.target.value)} placeholder={selected.columns.length >= 5 ? "Column limit reached" : "New column name"} disabled={selected.columns.length >= 5 || pending} /><button type="submit" disabled={!newColumnName.trim() || selected.columns.length >= 5 || pending}><Columns3 size={14} /> Add <small>{selected.columns.length}/5</small></button></form></div>
             </div>
             <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setActiveTask(null)}>
               <div className="kanban-columns">
-                {selected.columns.map((column) => <KanbanColumnView key={column.id} column={column} canDelete={selected.columns.length > 1} pending={pending} onAdd={() => setTaskEditor(emptyTask(selected.id, column.id))} onEditTask={(task) => setTaskEditor(taskDraft(task))} onRename={() => {
-                  const name = window.prompt("Rename column", column.name);
-                  if (name && name !== column.name) mutate(() => updateKanbanColumnAction(selected.id, column.id, name), "Column updated.", () => setBoards((current) => current.map((board) => board.id === selected.id ? { ...board, columns: board.columns.map((entry) => entry.id === column.id ? { ...entry, name: name.trim() } : entry) } : board)));
-                }} onDelete={() => setDeleteColumn(column.id)} />)}
+                {selected.columns.map((column) => <KanbanColumnView key={column.id} column={column} today={initialToday} canDelete={selected.columns.length > 1} pending={pending} onAdd={() => { setFocusComments(false); setTaskEditor(emptyTask(selected.id, column.id)); }} onEditTask={(task) => { setFocusComments(false); setTaskEditor(taskDraft(task)); }} onComment={(task) => { setFocusComments(true); setTaskEditor(taskDraft(task)); }} onRename={() => setRenameColumn({ id: column.id, name: column.name })} onDelete={() => setDeleteColumn(column.id)} />)}
               </div>
-              <DragOverlay>{activeTask ? <TaskCardBody task={activeTask} dragging /> : null}</DragOverlay>
+              <DragOverlay>{activeTask ? <TaskCardBody task={activeTask} today={initialToday} dragging /> : null}</DragOverlay>
             </DndContext>
           </>}
         </main>
@@ -223,13 +226,13 @@ export function KanbanPage({ initialData, initialSelectedBoardId }: { initialDat
       {boardEditor && <BoardDialog board={boardEditor === "new" ? null : boardEditor} pending={pending} close={() => setBoardEditor(null)} save={(name, color) => {
         if (boardEditor === "new") mutate(() => createKanbanBoardAction(name, color), "Board created.", (value) => { const board = value as KanbanBoard; setBoards((current) => [...current, board]); setBoardEditor(null); chooseBoard(board.id); });
         else mutate(() => updateKanbanBoardAction(boardEditor.id, name, color), "Board updated.", () => { setBoards((current) => current.map((board) => board.id === boardEditor.id ? { ...board, name: name.trim(), color } : board)); setBoardEditor(null); });
-      }} remove={boardEditor === "new" ? undefined : () => {
+      }} remove={boardEditor === "new" || boardEditor.accessRole !== "owner" ? undefined : () => {
         if (!window.confirm(`Delete “${boardEditor.name}” and all of its tasks? This cannot be undone.`)) return;
         const index = boards.findIndex((board) => board.id === boardEditor.id);
         const fallback = boards[index + 1] ?? boards[index - 1];
         mutate(() => deleteKanbanBoardAction(boardEditor.id), "Board deleted.", () => { setBoards((current) => current.filter((board) => board.id !== boardEditor.id)); setBoardEditor(null); if (fallback) chooseBoard(fallback.id); else { setSelectedId(null); router.push("/kanban"); } });
       }} />}
-      {taskEditor && selected && <TaskDialog draft={taskEditor} board={selected} pending={pending} close={() => setTaskEditor(null)} save={(draft) => mutate(() => saveKanbanTaskAction(draft), draft.id ? "Task updated." : "Task created.", () => setTaskEditor(null))} remove={taskEditor.id ? () => {
+      {taskEditor && selected && focusComments && taskEditor.id ? <CommentsDialog taskId={taskEditor.id} close={() => setTaskEditor(null)} /> : taskEditor && selected && <TaskDialog draft={taskEditor} board={selected} pending={pending} close={() => setTaskEditor(null)} save={(draft) => mutate(() => saveKanbanTaskAction(draft), draft.id ? "Task updated." : "Task created.", () => setTaskEditor(null))} remove={taskEditor.id ? () => {
         if (window.confirm(`Delete “${taskEditor.title}”?`)) mutate(() => deleteKanbanTaskAction(taskEditor.id!), "Task deleted.", () => setTaskEditor(null));
       } : undefined} mutate={mutate} />}
       {deleteColumn && selected && <DeleteColumnDialog board={selected} columnId={deleteColumn} pending={pending} close={() => setDeleteColumn(null)} confirm={() => mutate(() => deleteKanbanColumnAction(selected.id, deleteColumn), "Column deleted.", (value) => {
@@ -237,21 +240,26 @@ export function KanbanPage({ initialData, initialSelectedBoardId }: { initialDat
         setBoards((current) => current.map((board) => board.id === selected.id ? { ...board, columns: board.columns.filter((column) => column.id !== result.deletedColumnId).map((column) => ({ ...column, isCompletion: column.id === result.completionColumnId })) } : board));
         setDeleteColumn(null);
       })} />}
+      {renameColumn && selected && <RenameColumnDialog initialName={renameColumn.name} pending={pending} close={() => setRenameColumn(null)} save={(name) => mutate(() => updateKanbanColumnAction(selected.id, renameColumn.id, name), "Column updated.", () => {
+        setBoards((current) => current.map((board) => board.id === selected.id ? { ...board, columns: board.columns.map((column) => column.id === renameColumn.id ? { ...column, name: name.trim() } : column) } : board));
+        setRenameColumn(null);
+      })} />}
     </div>
   );
+  return selected ? <KanbanRoom key={selected.id} boardId={selected.id}>{content}</KanbanRoom> : content;
 }
 
 function EmptyBoard({ onCreate }: { onCreate: () => void }) {
   return <div className="kanban-empty"><span><CirclePlus size={25} /></span><h2>Start something fresh</h2><p>Create a board and Flowspace will set up Todo, In Progress, and Done for you.</p><button onClick={onCreate}><Plus size={16} /> Create your first board</button></div>;
 }
 
-function KanbanColumnView({ column, canDelete, pending, onAdd, onEditTask, onRename, onDelete }: { column: KanbanBoard["columns"][number]; canDelete: boolean; pending: boolean; onAdd: () => void; onEditTask: (task: KanbanTask) => void; onRename: () => void; onDelete: () => void }) {
+function KanbanColumnView({ column, today, canDelete, pending, onAdd, onEditTask, onComment, onRename, onDelete }: { column: KanbanBoard["columns"][number]; today: string; canDelete: boolean; pending: boolean; onAdd: () => void; onEditTask: (task: KanbanTask) => void; onComment: (task: KanbanTask) => void; onRename: () => void; onDelete: () => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: `column-${column.id}` });
   return <section ref={setNodeRef} className={`kanban-column ${isOver ? "is-over" : ""}`}>
     <header><div><span className={column.isCompletion ? "done" : ""}>{column.isCompletion && <Check size={11} />}</span><strong>{column.name}</strong><em>{column.tasks.length}</em></div><div><button aria-label={`Rename ${column.name}`} onClick={onRename}><Pencil size={13} /></button><button aria-label={`Delete ${column.name}`} title={canDelete ? `Delete ${column.name}` : "A board needs at least one column"} disabled={pending || !canDelete} onClick={onDelete}><Trash2 size={13} /></button></div></header>
     <SortableContext items={column.tasks.map((task) => `task-${task.id}`)} strategy={verticalListSortingStrategy}>
       <div className="kanban-task-list">
-        {column.tasks.map((task) => <SortableTaskCard key={task.id} task={task} onEdit={() => onEditTask(task)} />)}
+        {column.tasks.map((task) => <SortableTaskCard key={task.id} task={task} today={today} onEdit={() => onEditTask(task)} onComment={() => onComment(task)} />)}
         {!column.tasks.length && <button className="column-empty" onClick={onAdd}><Sparkles size={16} /><span><strong>A quiet column</strong>Start with one small task</span></button>}
       </div>
     </SortableContext>
@@ -259,20 +267,28 @@ function KanbanColumnView({ column, canDelete, pending, onAdd, onEditTask, onRen
   </section>;
 }
 
-function SortableTaskCard({ task, onEdit }: { task: KanbanTask; onEdit: () => void }) {
+function SortableTaskCard({ task, today, onEdit, onComment }: { task: KanbanTask; today: string; onEdit: () => void; onComment: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `task-${task.id}` });
   return <article ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} className={`kanban-task ${isDragging ? "dragging" : ""}`}>
-    <button className="task-open" aria-label={`Edit ${task.title}`} onClick={onEdit}><TaskCardBody task={task} /></button>
+    <button className="task-open" aria-label={`Edit ${task.title}`} onClick={onEdit}><TaskCardBody task={task} today={today} /></button>
+    <button className="task-comment-button" aria-label={`Open comments for ${task.title}`} onClick={onComment}><MessageCircle size={13} /></button>
     <button className="task-grip" aria-label={`Move ${task.title}`} {...attributes} {...listeners}><GripVertical size={15} /></button>
   </article>;
 }
 
-function TaskCardBody({ task, dragging = false }: { task: KanbanTask; dragging?: boolean }) {
-  const overdue = task.dueDate < todayLocal();
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+function formatTaskDueDate(value: string) {
+  const [, month, day] = value.split("-").map(Number);
+  return month >= 1 && month <= 12 && Number.isInteger(day) ? `${SHORT_MONTHS[month - 1]} ${day}` : value;
+}
+
+function TaskCardBody({ task, today, dragging = false }: { task: KanbanTask; today: string; dragging?: boolean }) {
+  const overdue = task.dueDate < today;
   return <div className={`task-card-body ${dragging ? "overlay" : ""}`}>
     <div className="task-card-top"><span className={`priority-dot ${task.priority}`} /><strong>{task.title}</strong></div>
     {!!task.labels.length && <div className="task-labels">{task.labels.map((label) => <span key={label.id} style={{ color: label.color, background: `${label.color}16`, borderColor: `${label.color}35` }}><i style={{ background: label.color }} />{label.name}</span>)}</div>}
-    <div className="task-meta"><span className={overdue ? "overdue" : ""}><CalendarDays size={12} />{new Date(`${task.dueDate}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span><span className={`priority-badge ${task.priority}`}>{task.priority}</span><div>{task.calendarItemId && <CalendarDays size={13} aria-label="Synced with Calendar" />}{task.notesLinked && <NotebookPen size={13} aria-label="Linked with Notes" />}</div></div>
+    <div className="task-meta"><span className={overdue ? "overdue" : ""}><CalendarDays size={12} />{formatTaskDueDate(task.dueDate)}</span><span className={`priority-badge ${task.priority}`}>{task.priority}</span><TaskCommentBadge taskId={task.id} /><div>{task.calendarItemId && <CalendarDays size={13} aria-label="Synced with Calendar" />}{task.notesLinked && <NotebookPen size={13} aria-label="Linked with Notes" />}</div></div>
   </div>;
 }
 
@@ -336,6 +352,10 @@ function TaskDialog({ draft: initial, board, pending, close, save, remove, mutat
   </form></Modal>;
 }
 
+function CommentsDialog({ taskId, close }: { taskId: number; close: () => void }) {
+  return <Modal close={close} className="comments-only-dialog"><TaskComments taskId={taskId} autoFocus close={close} /></Modal>;
+}
+
 function Toggle({ checked, onChange, icon, title, copy }: { checked: boolean; onChange: (value: boolean) => void; icon: ReactNode; title: string; copy: string }) {
   return <label><span>{icon}</span><div><strong>{title}</strong><small>{copy}</small></div><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /><i /></label>;
 }
@@ -343,4 +363,13 @@ function Toggle({ checked, onChange, icon, title, copy }: { checked: boolean; on
 function DeleteColumnDialog({ board, columnId, pending, close, confirm }: { board: KanbanBoard; columnId: number; pending: boolean; close: () => void; confirm: () => void }) {
   const column = board.columns.find((entry) => entry.id === columnId)!;
   return <Modal close={close} className="delete-column-dialog"><DialogHead icon={<Trash2 size={17} />} title={`Delete ${column.name}?`} subtitle="This action cannot be undone." close={close} /><div className="kanban-dialog-body"><div className="delete-column-warning"><Trash2 size={17} /><div><strong>{column.tasks.length ? `${column.tasks.length} task${column.tasks.length === 1 ? "" : "s"} will also be deleted` : "This column is empty"}</strong><span>{column.tasks.length ? "Linked Calendar items for these tasks will be removed too." : "The column will be removed from this board."}</span></div></div>{column.isCompletion && <p className="completion-reassign-note">The rightmost remaining column will become the board’s completion column.</p>}</div><div className="kanban-dialog-footer"><span /><button className="secondary" onClick={close}>Cancel</button><button className="danger solid" disabled={pending} onClick={confirm}>{pending ? "Deleting…" : "Delete column"}</button></div></Modal>;
+}
+
+function RenameColumnDialog({ initialName, pending, close, save }: { initialName: string; pending: boolean; close: () => void; save: (name: string) => void }) {
+  const [name, setName] = useState(initialName);
+  return <Modal close={close} className="rename-column-dialog"><form onSubmit={(event) => { event.preventDefault(); if (name.trim() && name.trim() !== initialName) save(name); }}>
+    <DialogHead icon={<Pencil size={17} />} title="Rename column" subtitle="Give this stage a clear, useful name." close={close} />
+    <div className="kanban-dialog-body"><label className="field field-full"><span>Column name</span><input autoFocus maxLength={40} value={name} onChange={(event) => setName(event.target.value)} /></label></div>
+    <div className="kanban-dialog-footer"><span /><button type="button" className="secondary" onClick={close}>Cancel</button><button type="submit" className="primary" disabled={pending || !name.trim() || name.trim() === initialName}>{pending ? "Saving…" : "Save name"}</button></div>
+  </form></Modal>;
 }

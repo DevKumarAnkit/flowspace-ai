@@ -48,8 +48,10 @@ export async function createLinkedCalendarItem(userId: number, fields: LinkedTas
   return item.id;
 }
 
-export async function updateLinkedCalendarItem(userId: number, itemId: number, fields: LinkedTaskFields) {
-  await db.update(calendarItems).set(calendarValues(userId, fields)).where(and(eq(calendarItems.id, itemId), eq(calendarItems.userId, userId)));
+export async function updateLinkedCalendarItem(itemId: number, fields: LinkedTaskFields) {
+  const [item] = await db.select({ userId: calendarItems.userId }).from(calendarItems).where(eq(calendarItems.id, itemId)).limit(1);
+  if (!item) return;
+  await db.update(calendarItems).set(calendarValues(item.userId, fields)).where(eq(calendarItems.id, itemId));
 }
 
 export async function syncLinkedKanbanFromCalendar(

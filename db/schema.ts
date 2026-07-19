@@ -91,6 +91,24 @@ export const kanbanBoards = pgTable("kanban_boards", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const kanbanBoardMembers = pgTable(
+  "kanban_board_members",
+  {
+    id: serial("id").primaryKey(),
+    boardId: integer("board_id").notNull().references(() => kanbanBoards.id, { onDelete: "cascade" }),
+    userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    role: text("role").default("editor").notNull(),
+    invitedByUserId: integer("invited_by_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("kanban_board_members_board_email_idx").on(table.boardId, table.email),
+    uniqueIndex("kanban_board_members_board_user_idx").on(table.boardId, table.userId),
+  ],
+);
+
 export const kanbanColumns = pgTable("kanban_columns", {
   id: serial("id").primaryKey(),
   boardId: integer("board_id").notNull().references(() => kanbanBoards.id, { onDelete: "cascade" }),
@@ -140,6 +158,7 @@ export const kanbanTaskLabels = pgTable(
 );
 
 export type KanbanBoardRow = typeof kanbanBoards.$inferSelect;
+export type KanbanBoardMemberRow = typeof kanbanBoardMembers.$inferSelect;
 export type KanbanColumnRow = typeof kanbanColumns.$inferSelect;
 export type KanbanTaskRow = typeof kanbanTasks.$inferSelect;
 export type KanbanLabelRow = typeof kanbanLabels.$inferSelect;

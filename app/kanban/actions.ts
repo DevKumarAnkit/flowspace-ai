@@ -1,20 +1,25 @@
 "use server";
 
-import { and, asc, eq, inArray, max } from "drizzle-orm";
+import { and, asc, eq, inArray, max, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import {
   calendarItems,
+  kanbanBoardMembers,
   kanbanBoards,
   kanbanColumns,
   kanbanLabels,
   kanbanTaskLabels,
   kanbanTasks,
+  users,
 } from "@/db/schema";
 import { assertCanAddColumn, assertUniqueColumnName, cleanName, validateTaskFields } from "@/lib/kanban-domain";
 import { createLinkedCalendarItem, updateLinkedCalendarItem } from "@/lib/kanban-calendar-sync";
-import { KANBAN_COLORS, type KanbanData, type KanbanTaskInput } from "@/lib/kanban-types";
+import { KANBAN_COLORS, type KanbanCollaborator, type KanbanData, type KanbanTaskInput } from "@/lib/kanban-types";
 import { requireDatabaseUser } from "@/lib/require-database-user";
+import { accessibleBoardIds, assertInviteEmail, removeKanbanMembership, requireKanbanBoardAccess, requireKanbanBoardOwner } from "@/lib/kanban-access";
+import { deleteTaskThread, getLiveblocks, syncKanbanRoom } from "@/lib/liveblocks-server";
+import { kanbanRoomId } from "@/lib/liveblocks-shared";
 
 function refreshKanban() {
   revalidatePath("/kanban");
@@ -26,16 +31,14 @@ function validColor(color: string) {
   return color;
 }
 
-async function ownedBoard(userId: number, boardId: number) {
-  const [board] = await db.select().from(kanbanBoards).where(and(eq(kanbanBoards.id, boardId), eq(kanbanBoards.userId, userId))).limit(1);
-  if (!board) throw new Error("Board not found.");
-  return board;
-}
-
 export async function getKanbanData(): Promise<KanbanData> {
   const user = await requireDatabaseUser("Kanban");
-  const boards = await db.select().from(kanbanBoards).where(eq(kanbanBoards.userId, user.id)).orderBy(asc(kanbanBoards.position), asc(kanbanBoards.id));
+  const sharedIds = await accessibleBoardIds(user);
+  const boards = await db.select().from(kanbanBoards)
+    .where(sharedIds.length ? or(eq(kanbanBoards.userId, user.id), inArray(kanbanBoards.id, sharedIds)) : eq(kanbanBoards.userId, user.id))
+    .orderBy(asc(kanbanBoards.position), asc(kanbanBoards.id));
   if (!boards.length) return { boards: [] };
+  await Promise.all(boards.map((board) => syncKanbanRoom(board.id).catch((error) => console.error("Unable to sync Liveblocks room", error))));
   const boardIds = boards.map((board) => board.id);
   const [columns, tasks, labels] = await Promise.all([
     db.select().from(kanbanColumns).where(inArray(kanbanColumns.boardId, boardIds)).orderBy(asc(kanbanColumns.position), asc(kanbanColumns.id)),
@@ -51,6 +54,7 @@ export async function getKanbanData(): Promise<KanbanData> {
       name: board.name,
       color: board.color,
       position: board.position,
+      accessRole: board.userId === user.id ? "owner" : "editor",
       labels: labels.filter((label) => label.boardId === board.id).map(({ id, boardId, name, color }) => ({ id, boardId, name, color })),
       columns: columns.filter((column) => column.boardId === board.id).map((column) => ({
         id: column.id,
@@ -94,12 +98,17 @@ export async function createKanbanBoardAction(name: string, color: string) {
     await db.delete(kanbanBoards).where(and(eq(kanbanBoards.id, board.id), eq(kanbanBoards.userId, user.id)));
     throw error;
   }
+  try { await syncKanbanRoom(board.id); } catch (error) {
+    await db.delete(kanbanBoards).where(eq(kanbanBoards.id, board.id));
+    throw error;
+  }
   refreshKanban();
   return {
     id: board.id,
     name: clean,
     color,
     position: (value ?? -1) + 1,
+    accessRole: "owner" as const,
     labels: [],
     columns: columns.map((column) => ({
       id: column.id,
@@ -114,24 +123,25 @@ export async function createKanbanBoardAction(name: string, color: string) {
 
 export async function updateKanbanBoardAction(id: number, name: string, color: string) {
   const user = await requireDatabaseUser("Kanban");
-  await ownedBoard(user.id, id);
+  await requireKanbanBoardAccess(user, id);
   await db.update(kanbanBoards).set({ name: cleanName(name, "board"), color: validColor(color), updatedAt: new Date() }).where(eq(kanbanBoards.id, id));
   refreshKanban();
 }
 
 export async function deleteKanbanBoardAction(id: number) {
   const user = await requireDatabaseUser("Kanban");
-  await ownedBoard(user.id, id);
+  await requireKanbanBoardOwner(user, id);
+  await getLiveblocks().deleteRoom(kanbanRoomId(id));
   const linked = await db.select({ id: kanbanTasks.calendarItemId }).from(kanbanTasks).where(eq(kanbanTasks.boardId, id));
   const calendarIds = linked.flatMap((entry) => entry.id == null ? [] : [entry.id]);
-  if (calendarIds.length) await db.delete(calendarItems).where(and(eq(calendarItems.userId, user.id), inArray(calendarItems.id, calendarIds)));
-  await db.delete(kanbanBoards).where(and(eq(kanbanBoards.id, id), eq(kanbanBoards.userId, user.id)));
+  if (calendarIds.length) await db.delete(calendarItems).where(inArray(calendarItems.id, calendarIds));
+  await db.delete(kanbanBoards).where(eq(kanbanBoards.id, id));
   refreshKanban();
 }
 
 export async function createKanbanColumnAction(boardId: number, name: string) {
   const user = await requireDatabaseUser("Kanban");
-  await ownedBoard(user.id, boardId);
+  await requireKanbanBoardAccess(user, boardId);
   const columns = await db.select().from(kanbanColumns).where(eq(kanbanColumns.boardId, boardId));
   assertCanAddColumn(columns.length);
   const clean = cleanName(name, "column");
@@ -143,7 +153,7 @@ export async function createKanbanColumnAction(boardId: number, name: string) {
 
 export async function updateKanbanColumnAction(boardId: number, columnId: number, name: string) {
   const user = await requireDatabaseUser("Kanban");
-  await ownedBoard(user.id, boardId);
+  await requireKanbanBoardAccess(user, boardId);
   const [column] = await db.select().from(kanbanColumns).where(and(eq(kanbanColumns.id, columnId), eq(kanbanColumns.boardId, boardId))).limit(1);
   if (!column) throw new Error("Column not found.");
   const columns = await db.select({ id: kanbanColumns.id, name: kanbanColumns.name }).from(kanbanColumns).where(eq(kanbanColumns.boardId, boardId));
@@ -155,7 +165,7 @@ export async function updateKanbanColumnAction(boardId: number, columnId: number
 
 export async function deleteKanbanColumnAction(boardId: number, columnId: number) {
   const user = await requireDatabaseUser("Kanban");
-  await ownedBoard(user.id, boardId);
+  await requireKanbanBoardAccess(user, boardId);
   const columns = await db.select().from(kanbanColumns).where(eq(kanbanColumns.boardId, boardId)).orderBy(asc(kanbanColumns.position));
   if (columns.length <= 1) throw new Error("A board needs at least one column.");
   const column = columns.find((entry) => entry.id === columnId);
@@ -169,8 +179,9 @@ export async function deleteKanbanColumnAction(boardId: number, columnId: number
 
   const tasks = await db.select({ id: kanbanTasks.id, calendarItemId: kanbanTasks.calendarItemId }).from(kanbanTasks).where(eq(kanbanTasks.columnId, columnId));
   const calendarIds = tasks.flatMap((task) => task.calendarItemId == null ? [] : [task.calendarItemId]);
-  if (calendarIds.length) await db.delete(calendarItems).where(and(eq(calendarItems.userId, user.id), inArray(calendarItems.id, calendarIds)));
+  if (calendarIds.length) await db.delete(calendarItems).where(inArray(calendarItems.id, calendarIds));
   if (tasks.length) await db.delete(kanbanTasks).where(inArray(kanbanTasks.id, tasks.map((task) => task.id)));
+  await Promise.all(tasks.map((task) => deleteTaskThread(boardId, task.id).catch((error) => console.error("Unable to delete task thread", error))));
   await db.update(kanbanTasks).set({ lastNonCompletionColumnId: null }).where(eq(kanbanTasks.lastNonCompletionColumnId, columnId));
   await db.delete(kanbanColumns).where(eq(kanbanColumns.id, columnId));
   for (const [position, entry] of remaining.entries()) await db.update(kanbanColumns).set({ position }).where(eq(kanbanColumns.id, entry.id));
@@ -180,7 +191,7 @@ export async function deleteKanbanColumnAction(boardId: number, columnId: number
 
 export async function createKanbanLabelAction(boardId: number, name: string, color: string) {
   const user = await requireDatabaseUser("Kanban");
-  await ownedBoard(user.id, boardId);
+  await requireKanbanBoardAccess(user, boardId);
   const [label] = await db.insert(kanbanLabels).values({ boardId, name: cleanName(name, "label"), color: validColor(color) }).returning();
   refreshKanban();
   return { id: label.id, boardId: label.boardId, name: label.name, color: label.color };
@@ -188,20 +199,22 @@ export async function createKanbanLabelAction(boardId: number, name: string, col
 
 export async function updateKanbanLabelAction(boardId: number, labelId: number, name: string, color: string) {
   const user = await requireDatabaseUser("Kanban");
-  await ownedBoard(user.id, boardId);
+  await requireKanbanBoardAccess(user, boardId);
   await db.update(kanbanLabels).set({ name: cleanName(name, "label"), color: validColor(color), updatedAt: new Date() }).where(and(eq(kanbanLabels.id, labelId), eq(kanbanLabels.boardId, boardId)));
   refreshKanban();
 }
 
 export async function deleteKanbanLabelAction(boardId: number, labelId: number) {
   const user = await requireDatabaseUser("Kanban");
-  await ownedBoard(user.id, boardId);
+  await requireKanbanBoardAccess(user, boardId);
   await db.delete(kanbanLabels).where(and(eq(kanbanLabels.id, labelId), eq(kanbanLabels.boardId, boardId)));
   refreshKanban();
 }
 
 async function checkedTaskContext(userId: number, input: KanbanTaskInput) {
-  await ownedBoard(userId, input.boardId);
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!user) throw new Error("Unable to resolve the signed-in user.");
+  await requireKanbanBoardAccess(user, input.boardId);
   const columns = await db.select().from(kanbanColumns).where(eq(kanbanColumns.boardId, input.boardId)).orderBy(asc(kanbanColumns.position));
   const column = columns.find((entry) => entry.id === input.columnId);
   if (!column) throw new Error("Column not found.");
@@ -216,7 +229,7 @@ export async function saveKanbanTaskAction(input: KanbanTaskInput) {
   const { column } = await checkedTaskContext(user.id, input);
   let existing: typeof kanbanTasks.$inferSelect | undefined;
   if (input.id) {
-    [existing] = await db.select({ task: kanbanTasks }).from(kanbanTasks).innerJoin(kanbanBoards, eq(kanbanTasks.boardId, kanbanBoards.id)).where(and(eq(kanbanTasks.id, input.id), eq(kanbanBoards.userId, user.id))).limit(1).then((rows) => rows.map((row) => row.task));
+    [existing] = await db.select().from(kanbanTasks).where(and(eq(kanbanTasks.id, input.id), eq(kanbanTasks.boardId, input.boardId))).limit(1);
     if (!existing) throw new Error("Task not found.");
   }
   const position = existing?.columnId === column.id ? existing.position : (await db.select({ id: kanbanTasks.id }).from(kanbanTasks).where(eq(kanbanTasks.columnId, column.id))).length;
@@ -238,13 +251,13 @@ export async function saveKanbanTaskAction(input: KanbanTaskInput) {
 
   let calendarItemId = existing?.calendarItemId ?? null;
   const linkedFields = { title: fields.title, description: fields.description, dueDate: input.dueDate, timeZone: input.timeZone, completed: column.isCompletion };
-  if (input.calendarSync && calendarItemId) await updateLinkedCalendarItem(user.id, calendarItemId, linkedFields);
+  if (input.calendarSync && calendarItemId) await updateLinkedCalendarItem(calendarItemId, linkedFields);
   else if (input.calendarSync) {
     calendarItemId = await createLinkedCalendarItem(user.id, linkedFields);
     await db.update(kanbanTasks).set({ calendarItemId }).where(eq(kanbanTasks.id, task.id));
   } else if (calendarItemId) {
     await db.update(kanbanTasks).set({ calendarItemId: null }).where(eq(kanbanTasks.id, task.id));
-    await db.delete(calendarItems).where(and(eq(calendarItems.id, calendarItemId), eq(calendarItems.userId, user.id)));
+    await db.delete(calendarItems).where(eq(calendarItems.id, calendarItemId));
   }
 
   await db.delete(kanbanTaskLabels).where(eq(kanbanTaskLabels.taskId, task.id));
@@ -255,16 +268,18 @@ export async function saveKanbanTaskAction(input: KanbanTaskInput) {
 
 export async function deleteKanbanTaskAction(taskId: number) {
   const user = await requireDatabaseUser("Kanban");
-  const [entry] = await db.select({ task: kanbanTasks }).from(kanbanTasks).innerJoin(kanbanBoards, eq(kanbanTasks.boardId, kanbanBoards.id)).where(and(eq(kanbanTasks.id, taskId), eq(kanbanBoards.userId, user.id))).limit(1);
-  if (!entry) throw new Error("Task not found.");
+  const [task] = await db.select().from(kanbanTasks).where(eq(kanbanTasks.id, taskId)).limit(1);
+  if (!task) throw new Error("Task not found.");
+  await requireKanbanBoardAccess(user, task.boardId);
   await db.delete(kanbanTasks).where(eq(kanbanTasks.id, taskId));
-  if (entry.task.calendarItemId) await db.delete(calendarItems).where(and(eq(calendarItems.id, entry.task.calendarItemId), eq(calendarItems.userId, user.id)));
+  if (task.calendarItemId) await db.delete(calendarItems).where(eq(calendarItems.id, task.calendarItemId));
+  await deleteTaskThread(task.boardId, taskId).catch((error) => console.error("Unable to delete task thread", error));
   refreshKanban();
 }
 
 export async function moveKanbanTaskAction(boardId: number, taskId: number, targetColumnId: number, orders: Array<{ columnId: number; taskIds: number[] }>) {
   const user = await requireDatabaseUser("Kanban");
-  await ownedBoard(user.id, boardId);
+  await requireKanbanBoardAccess(user, boardId);
   const [task] = await db.select().from(kanbanTasks).where(and(eq(kanbanTasks.id, taskId), eq(kanbanTasks.boardId, boardId))).limit(1);
   const columns = await db.select().from(kanbanColumns).where(eq(kanbanColumns.boardId, boardId));
   const target = columns.find((column) => column.id === targetColumnId);
@@ -284,6 +299,44 @@ export async function moveKanbanTaskAction(boardId: number, taskId: number, targ
     if (!columns.some((column) => column.id === order.columnId)) throw new Error("Column not found.");
     for (const [position, id] of order.taskIds.entries()) await db.update(kanbanTasks).set({ position, columnId: order.columnId }).where(and(eq(kanbanTasks.id, id), eq(kanbanTasks.boardId, boardId)));
   }
-  if (task.calendarItemId) await db.update(calendarItems).set({ isCompleted: target.isCompletion, updatedAt: new Date() }).where(and(eq(calendarItems.id, task.calendarItemId), eq(calendarItems.userId, user.id)));
+  if (task.calendarItemId) await db.update(calendarItems).set({ isCompleted: target.isCompletion, updatedAt: new Date() }).where(eq(calendarItems.id, task.calendarItemId));
+  refreshKanban();
+}
+
+export async function getKanbanCollaboratorsAction(boardId: number): Promise<KanbanCollaborator[]> {
+  const current = await requireDatabaseUser("Kanban collaboration");
+  const board = await requireKanbanBoardAccess(current, boardId).then(({ board }) => board);
+  const [owner] = await db.select().from(users).where(eq(users.id, board.userId)).limit(1);
+  const rows = await db.select({ member: kanbanBoardMembers, user: users }).from(kanbanBoardMembers)
+    .leftJoin(users, eq(kanbanBoardMembers.userId, users.id)).where(eq(kanbanBoardMembers.boardId, boardId)).orderBy(asc(kanbanBoardMembers.createdAt));
+  return [
+    { id: `owner:${board.userId}`, userId: board.userId, name: owner?.name ?? null, email: owner?.email ?? "", imageUrl: owner?.imageUrl ?? null, role: "owner", status: "active" },
+    ...rows.map(({ member, user }): KanbanCollaborator => ({
+      id: String(member.id), userId: member.userId, name: user?.name ?? null, email: member.email,
+      imageUrl: user?.imageUrl ?? null, role: "editor", status: member.userId == null ? "pending" : "active",
+    })),
+  ];
+}
+
+export async function inviteKanbanCollaboratorAction(boardId: number, email: string): Promise<KanbanCollaborator> {
+  const current = await requireDatabaseUser("Kanban collaboration");
+  await requireKanbanBoardOwner(current, boardId);
+  const normalized = assertInviteEmail(email);
+  if (normalized === current.email.toLowerCase()) throw new Error("You already own this board.");
+  const [existing] = await db.select().from(kanbanBoardMembers).where(and(eq(kanbanBoardMembers.boardId, boardId), eq(kanbanBoardMembers.email, normalized))).limit(1);
+  if (existing) throw new Error("This board is already shared with that email.");
+  const [invitedUser] = await db.select().from(users).where(eq(users.email, normalized)).limit(1);
+  const [member] = await db.insert(kanbanBoardMembers).values({ boardId, userId: invitedUser?.id ?? null, email: normalized, invitedByUserId: current.id }).returning();
+  try { await syncKanbanRoom(boardId); } catch (error) {
+    await db.delete(kanbanBoardMembers).where(eq(kanbanBoardMembers.id, member.id));
+    throw error;
+  }
+  refreshKanban();
+  return { id: String(member.id), userId: invitedUser?.id ?? null, name: invitedUser?.name ?? null, email: normalized, imageUrl: invitedUser?.imageUrl ?? null, role: "editor", status: invitedUser ? "active" : "pending" };
+}
+
+export async function removeKanbanCollaboratorAction(boardId: number, memberId: number) {
+  const current = await requireDatabaseUser("Kanban collaboration");
+  await removeKanbanMembership(current, boardId, memberId);
   refreshKanban();
 }
