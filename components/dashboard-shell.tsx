@@ -40,6 +40,7 @@ type NavigationGroup = {
     color: string;
     active?: boolean;
     badge?: string;
+    href?: string;
   }>;
 };
 
@@ -49,8 +50,8 @@ const navigation: NavigationGroup[] = [
     items: [
       { label: "Dashboard", icon: LayoutDashboard, color: "icon-violet", active: true },
       { label: "AI Assistant", icon: Bot, color: "icon-rose" },
-      { label: "Calendar", icon: CalendarDays, color: "icon-blue" },
-      { label: "Task / Kanban", icon: SquareKanban, color: "icon-amber" },
+      { label: "Calendar", icon: CalendarDays, color: "icon-blue", href: "/calendar" },
+      { label: "Task / Kanban", icon: SquareKanban, color: "icon-amber", href: "/kanban" },
     ],
   },
   {
@@ -106,8 +107,8 @@ export function DashboardShell() {
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const content = <><span className={`nav-icon ${item.color}`}><Icon size={16} strokeWidth={2.1} /></span>{!collapsed && <><span>{item.label}</span>{item.badge && <em>{item.badge}</em>}</>}</>;
-                return item.label === "Calendar" ? (
-                  <Link className="nav-item" href="/calendar" key={item.label} title={collapsed ? item.label : undefined}>{content}</Link>
+                return item.href ? (
+                  <Link className="nav-item" href={item.href} key={item.label} title={collapsed ? item.label : undefined} onClick={() => setMobileOpen(false)}>{content}</Link>
                 ) : (
                   <button className={`nav-item ${item.active ? "active" : ""}`} key={item.label} title={collapsed ? item.label : undefined}>
                     {content}

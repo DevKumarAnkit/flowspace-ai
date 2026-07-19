@@ -1,13 +1,13 @@
 "use server";
 
-import { currentUser } from "@clerk/nextjs/server";
 import { and, asc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { calendarCategories, calendarItemExceptions, calendarItems, users } from "@/db/schema";
 import type { CalendarItemInput } from "@/lib/calendar-types";
 import { CATEGORY_COLORS } from "@/lib/calendar-types";
-import { syncUser } from "@/lib/sync-user";
+import { requireDatabaseUser } from "@/lib/require-database-user";
+import { syncLinkedKanbanFromCalendar, unlinkKanbanFromCalendar } from "@/lib/kanban-calendar-sync";
 
 const DEFAULT_CATEGORIES = [
   ["Work", "#7057E8"],
@@ -17,16 +17,7 @@ const DEFAULT_CATEGORIES = [
   ["Meetings", "#CE6542"],
 ] as const;
 
-async function requireDatabaseUser() {
-  const clerkUser = await currentUser();
-  if (!clerkUser) throw new Error("You must be signed in to use the calendar.");
-  await syncUser(clerkUser);
-  const [databaseUser] = await db.select().from(users).where(eq(users.clerkId, clerkUser.id)).limit(1);
-  if (!databaseUser) throw new Error("Unable to resolve the signed-in user.");
-  return databaseUser;
-}
-
-async function ensureDefaultCategories(user: typeof users.$inferSelect) {
+async function ensureDefaultCategories(user: Awaited<ReturnType<typeof requireDatabaseUser>>) {
   if (user.calendarCategoriesSeeded) return;
   for (const [name, color] of DEFAULT_CATEGORIES) {
     await db
@@ -38,7 +29,7 @@ async function ensureDefaultCategories(user: typeof users.$inferSelect) {
 }
 
 export async function getCalendarData() {
-  const user = await requireDatabaseUser();
+  const user = await requireDatabaseUser("the calendar");
   await ensureDefaultCategories(user);
   const [categories, items, exceptions] = await Promise.all([
     db.select().from(calendarCategories).where(eq(calendarCategories.userId, user.id)).orderBy(asc(calendarCategories.id)),
@@ -145,7 +136,7 @@ export async function saveCalendarItemAction(
   occurrenceStart?: string,
   scope: "occurrence" | "series" = "series",
 ) {
-  const user = await requireDatabaseUser();
+  const user = await requireDatabaseUser("the calendar");
   if (input.categoryId) {
     const [category] = await db
       .select({ id: calendarCategories.id })
@@ -181,8 +172,15 @@ export async function saveCalendarItemAction(
         .set(values)
         .where(and(eq(calendarItems.id, input.id), eq(calendarItems.userId, user.id)));
     }
+    await syncLinkedKanbanFromCalendar(user.id, input.id, {
+      title: input.title.trim(),
+      description: input.description,
+      dueDate: input.allDay ? input.startDate : input.startsAt?.slice(0, 10) ?? null,
+      completed: Boolean(input.isCompleted),
+    });
   }
   revalidatePath("/calendar");
+  revalidatePath("/kanban");
 }
 
 export async function deleteCalendarItemAction(
@@ -190,7 +188,7 @@ export async function deleteCalendarItemAction(
   occurrenceStart?: string,
   scope: "occurrence" | "series" = "series",
 ) {
-  const user = await requireDatabaseUser();
+  const user = await requireDatabaseUser("the calendar");
   const owned = and(eq(calendarItems.id, itemId), eq(calendarItems.userId, user.id));
   const [item] = await db.select({ id: calendarItems.id }).from(calendarItems).where(owned).limit(1);
   if (!item) throw new Error("Calendar item not found.");
@@ -203,18 +201,23 @@ export async function deleteCalendarItemAction(
         set: { cancelled: true, overrides: null, updatedAt: new Date() },
       });
   } else {
+    await unlinkKanbanFromCalendar(user.id, itemId);
     await db.delete(calendarItems).where(owned);
   }
   revalidatePath("/calendar");
+  revalidatePath("/kanban");
 }
 
 export async function toggleCalendarTaskAction(itemId: number, completed: boolean) {
-  const user = await requireDatabaseUser();
+  const user = await requireDatabaseUser("the calendar");
   await db
     .update(calendarItems)
     .set({ isCompleted: completed, updatedAt: new Date() })
     .where(and(eq(calendarItems.id, itemId), eq(calendarItems.userId, user.id), eq(calendarItems.type, "task")));
+  const [item] = await db.select().from(calendarItems).where(and(eq(calendarItems.id, itemId), eq(calendarItems.userId, user.id))).limit(1);
+  if (item) await syncLinkedKanbanFromCalendar(user.id, itemId, { title: item.title, description: item.description ?? "", dueDate: item.startDate, completed });
   revalidatePath("/calendar");
+  revalidatePath("/kanban");
 }
 
 export async function createCalendarCategoryAction(name: string, color: string) {
