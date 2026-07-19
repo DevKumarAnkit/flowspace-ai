@@ -1,4 +1,14 @@
-import { pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  date,
+  integer,
+  jsonb,
+  pgTable,
+  serial,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -6,9 +16,66 @@ export const users = pgTable("users", {
   name: text("name"),
   email: text("email").notNull().unique(),
   imageUrl: text("image_url"),
+  calendarCategoriesSeeded: boolean("calendar_categories_seeded").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+
+export const calendarCategories = pgTable(
+  "calendar_categories",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    color: text("color").notNull(),
+    isDefault: boolean("is_default").default(false).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("calendar_categories_user_name_idx").on(table.userId, table.name)],
+);
+
+export const calendarItems = pgTable("calendar_items", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  categoryId: integer("category_id").references(() => calendarCategories.id, { onDelete: "set null" }),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  isDraft: boolean("is_draft").default(false).notNull(),
+  isCompleted: boolean("is_completed").default(false).notNull(),
+  allDay: boolean("all_day").default(true).notNull(),
+  startDate: date("start_date"),
+  endDate: date("end_date"),
+  startsAt: timestamp("starts_at", { withTimezone: true }),
+  endsAt: timestamp("ends_at", { withTimezone: true }),
+  timeZone: text("time_zone").notNull(),
+  notificationOffset: integer("notification_offset"),
+  recurrenceFrequency: text("recurrence_frequency").default("none").notNull(),
+  recurrenceEndMode: text("recurrence_end_mode").default("never").notNull(),
+  recurrenceEndDate: date("recurrence_end_date"),
+  recurrenceCount: integer("recurrence_count"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const calendarItemExceptions = pgTable(
+  "calendar_item_exceptions",
+  {
+    id: serial("id").primaryKey(),
+    itemId: integer("item_id").notNull().references(() => calendarItems.id, { onDelete: "cascade" }),
+    originalStart: text("original_start").notNull(),
+    cancelled: boolean("cancelled").default(false).notNull(),
+    overrides: jsonb("overrides").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("calendar_item_exceptions_occurrence_idx").on(table.itemId, table.originalStart)],
+);
+
+export type CalendarCategoryRow = typeof calendarCategories.$inferSelect;
+export type CalendarItemRow = typeof calendarItems.$inferSelect;
+export type CalendarItemExceptionRow = typeof calendarItemExceptions.$inferSelect;
