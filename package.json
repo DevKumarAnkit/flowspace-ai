@@ -11,6 +11,7 @@
     "test:kanban": "node --test --experimental-strip-types lib/kanban-domain.test.ts",
     "test:collaboration": "node --test --experimental-strip-types lib/liveblocks-shared.test.ts",
     "test:notes": "node --test --experimental-strip-types lib/notes-domain.test.ts",
+    "test:assemblyai": "node --test --experimental-strip-types lib/assemblyai-streaming.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"
