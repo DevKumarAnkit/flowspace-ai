@@ -1,0 +1,1 @@
+ALTER TABLE "notes" ADD COLUMN "icon" text DEFAULT 'file' NOT NULL;
