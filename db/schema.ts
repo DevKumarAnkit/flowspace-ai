@@ -4,6 +4,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   serial,
   text,
   timestamp,
@@ -79,3 +80,66 @@ export const calendarItemExceptions = pgTable(
 export type CalendarCategoryRow = typeof calendarCategories.$inferSelect;
 export type CalendarItemRow = typeof calendarItems.$inferSelect;
 export type CalendarItemExceptionRow = typeof calendarItemExceptions.$inferSelect;
+
+export const kanbanBoards = pgTable("kanban_boards", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  color: text("color").notNull(),
+  position: integer("position").default(0).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const kanbanColumns = pgTable("kanban_columns", {
+  id: serial("id").primaryKey(),
+  boardId: integer("board_id").notNull().references(() => kanbanBoards.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  position: integer("position").default(0).notNull(),
+  isCompletion: boolean("is_completion").default(false).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const kanbanTasks = pgTable(
+  "kanban_tasks",
+  {
+    id: serial("id").primaryKey(),
+    boardId: integer("board_id").notNull().references(() => kanbanBoards.id, { onDelete: "cascade" }),
+    columnId: integer("column_id").notNull().references(() => kanbanColumns.id, { onDelete: "restrict" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    dueDate: date("due_date").notNull(),
+    priority: text("priority").notNull(),
+    position: integer("position").default(0).notNull(),
+    notesLinked: boolean("notes_linked").default(false).notNull(),
+    calendarItemId: integer("calendar_item_id").references(() => calendarItems.id, { onDelete: "set null" }),
+    lastNonCompletionColumnId: integer("last_non_completion_column_id").references(() => kanbanColumns.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("kanban_tasks_calendar_item_idx").on(table.calendarItemId)],
+);
+
+export const kanbanLabels = pgTable("kanban_labels", {
+  id: serial("id").primaryKey(),
+  boardId: integer("board_id").notNull().references(() => kanbanBoards.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  color: text("color").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const kanbanTaskLabels = pgTable(
+  "kanban_task_labels",
+  {
+    taskId: integer("task_id").notNull().references(() => kanbanTasks.id, { onDelete: "cascade" }),
+    labelId: integer("label_id").notNull().references(() => kanbanLabels.id, { onDelete: "cascade" }),
+  },
+  (table) => [primaryKey({ columns: [table.taskId, table.labelId] })],
+);
+
+export type KanbanBoardRow = typeof kanbanBoards.$inferSelect;
+export type KanbanColumnRow = typeof kanbanColumns.$inferSelect;
+export type KanbanTaskRow = typeof kanbanTasks.$inferSelect;
+export type KanbanLabelRow = typeof kanbanLabels.$inferSelect;
