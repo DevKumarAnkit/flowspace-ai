@@ -7,7 +7,7 @@ import { users } from "@/db/schema";
 export async function syncUser(user: ClerkUser) {
   const primaryEmail = user.emailAddresses.find(
     ({ id }) => id === user.primaryEmailAddressId,
-  )?.emailAddress;
+  )?.emailAddress.toLowerCase();
 
   if (!primaryEmail) {
     throw new Error("The authenticated Clerk user does not have a primary email address.");

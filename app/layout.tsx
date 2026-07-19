@@ -1,6 +1,8 @@
 import { ClerkProvider } from '@clerk/nextjs';
+import "@liveblocks/react-ui/styles.css";
 import "./globals.css";
 import type { Metadata } from "next";
+import { FlowspaceLiveblocksProvider } from "@/components/liveblocks-provider";
 
 export const metadata: Metadata = {
   title: "Flowspace — Your ideas, in motion",
@@ -16,7 +18,7 @@ export default function RootLayout({
     <ClerkProvider>
       <html lang="en">
         <body>
-          {children}
+          <FlowspaceLiveblocksProvider>{children}</FlowspaceLiveblocksProvider>
         </body>
       </html>
     </ClerkProvider>

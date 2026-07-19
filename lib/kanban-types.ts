@@ -38,9 +38,20 @@ export type KanbanBoard = {
   position: number;
   columns: KanbanColumn[];
   labels: KanbanLabel[];
+  accessRole: "owner" | "editor";
 };
 
 export type KanbanData = { boards: KanbanBoard[] };
+
+export type KanbanCollaborator = {
+  id: string;
+  userId: number | null;
+  name: string | null;
+  email: string;
+  imageUrl: string | null;
+  role: "owner" | "editor";
+  status: "active" | "pending";
+};
 
 export type KanbanTaskInput = {
   id?: number;
@@ -72,4 +83,3 @@ export function todayLocal(date = new Date()) {
   const offset = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
 }
-

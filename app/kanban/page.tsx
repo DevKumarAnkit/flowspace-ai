@@ -11,10 +11,10 @@ export default async function KanbanRoute({ searchParams }: { searchParams: Prom
   const [data, params] = await Promise.all([getKanbanData(), searchParams]);
   const requested = Number(params.board);
   const selectedBoardId = data.boards.some((board) => board.id === requested) ? requested : data.boards[0]?.id ?? null;
+  const initialToday = new Date().toISOString().slice(0, 10);
   return (
     <AppShell title="Task / Kanban">
-      <KanbanPage initialData={data} initialSelectedBoardId={selectedBoardId} />
+      <KanbanPage initialData={data} initialSelectedBoardId={selectedBoardId} initialToday={initialToday} />
     </AppShell>
   );
 }
-

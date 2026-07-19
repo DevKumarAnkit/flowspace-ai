@@ -29,6 +29,13 @@
       "when": 1784460879091,
       "tag": "0003_nifty_the_watchers",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784472715157,
+      "tag": "0004_peaceful_taskmaster",
+      "breakpoints": true
     }
   ]
 }
