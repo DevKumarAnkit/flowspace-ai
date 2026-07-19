@@ -185,3 +185,19 @@ export const notes = pgTable(
 );
 
 export type NoteRow = typeof notes.$inferSelect;
+
+export const whiteboards = pgTable(
+  "whiteboards",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    color: text("color").notNull(),
+    scene: jsonb("scene").$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("whiteboards_user_updated_idx").on(table.userId, table.updatedAt)],
+);
+
+export type WhiteboardRow = typeof whiteboards.$inferSelect;

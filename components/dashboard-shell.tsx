@@ -58,7 +58,7 @@ const navigation: NavigationGroup[] = [
     label: "Create",
     items: [
       { label: "Notes", icon: StickyNote, color: "icon-green", href: "/notes" },
-      { label: "Whiteboard", icon: MousePointer2, color: "icon-cyan" },
+      { label: "Whiteboard", icon: MousePointer2, color: "icon-cyan", href: "/whiteboard" },
       { label: "Pages / Spaces", icon: FileText, color: "icon-orange" },
       { label: "AI Template Builder", icon: LayoutTemplate, color: "icon-pink", badge: "AI" },
     ],
@@ -174,7 +174,7 @@ export function DashboardShell() {
 
           <section className="quick-grid" aria-label="Quick actions">
             <button className="quick-card purple"><span><StickyNote size={18} /></span><div><strong>New note</strong><small>Capture an idea</small></div><Plus size={15} /></button>
-            <button className="quick-card blue"><span><MousePointer2 size={18} /></span><div><strong>New whiteboard</strong><small>Map it visually</small></div><Plus size={15} /></button>
+            <Link className="quick-card blue" href="/whiteboard"><span><MousePointer2 size={18} /></span><div><strong>New whiteboard</strong><small>Map it visually</small></div><Plus size={15} /></Link>
             <button className="quick-card orange"><span><SquareKanban size={18} /></span><div><strong>New task</strong><small>Plan your next step</small></div><Plus size={15} /></button>
             <button className="quick-card green"><span><Bot size={18} /></span><div><strong>Ask Flow AI</strong><small>Create with AI</small></div><Sparkles size={15} /></button>
           </section>
