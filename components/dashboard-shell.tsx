@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   ArrowUpRight,
   Bell,
@@ -104,10 +105,12 @@ export function DashboardShell() {
               {!collapsed && <p className="nav-label">{group.label}</p>}
               {group.items.map((item) => {
                 const Icon = item.icon;
-                return (
+                const content = <><span className={`nav-icon ${item.color}`}><Icon size={16} strokeWidth={2.1} /></span>{!collapsed && <><span>{item.label}</span>{item.badge && <em>{item.badge}</em>}</>}</>;
+                return item.label === "Calendar" ? (
+                  <Link className="nav-item" href="/calendar" key={item.label} title={collapsed ? item.label : undefined}>{content}</Link>
+                ) : (
                   <button className={`nav-item ${item.active ? "active" : ""}`} key={item.label} title={collapsed ? item.label : undefined}>
-                    <span className={`nav-icon ${item.color}`}><Icon size={16} strokeWidth={2.1} /></span>
-                    {!collapsed && <><span>{item.label}</span>{item.badge && <em>{item.badge}</em>}</>}
+                    {content}
                   </button>
                 );
               })}
