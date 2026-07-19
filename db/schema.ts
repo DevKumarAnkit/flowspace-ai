@@ -2,6 +2,7 @@ import {
   boolean,
   date,
   integer,
+  index,
   jsonb,
   pgTable,
   primaryKey,
@@ -162,3 +163,25 @@ export type KanbanBoardMemberRow = typeof kanbanBoardMembers.$inferSelect;
 export type KanbanColumnRow = typeof kanbanColumns.$inferSelect;
 export type KanbanTaskRow = typeof kanbanTasks.$inferSelect;
 export type KanbanLabelRow = typeof kanbanLabels.$inferSelect;
+
+export const notes = pgTable(
+  "notes",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    content: jsonb("content").$type<Record<string, unknown>>().notNull(),
+    color: text("color").notNull(),
+    icon: text("icon").default("file").notNull(),
+    isPinned: boolean("is_pinned").default(false).notNull(),
+    trashedAt: timestamp("trashed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("notes_user_updated_idx").on(table.userId, table.updatedAt),
+    index("notes_user_trashed_idx").on(table.userId, table.trashedAt),
+  ],
+);
+
+export type NoteRow = typeof notes.$inferSelect;
