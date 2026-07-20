@@ -13,6 +13,10 @@ export function kanbanRoomId(boardId: number) {
   return `flowspace:kanban-board:${boardId}`;
 }
 
+export function spacePageRoomId(pageId: number) {
+  return `flowspace:space-page:${pageId}`;
+}
+
 export function liveblocksUserId(userId: number) {
   return `user:${userId}`;
 }

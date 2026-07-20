@@ -46,7 +46,7 @@ const navigation: Array<{ label: string; items: NavigationItem[] }> = [
     items: [
       { label: "Notes", icon: StickyNote, color: "icon-green", href: "/notes" },
       { label: "Whiteboard", icon: MousePointer2, color: "icon-cyan", href: "/whiteboard" },
-      { label: "Pages / Spaces", icon: FileText, color: "icon-orange" },
+      { label: "Pages / Spaces", icon: FileText, color: "icon-orange", href: "/spaces" },
       { label: "AI Template Builder", icon: LayoutTemplate, color: "icon-pink", badge: "AI" },
     ],
   },

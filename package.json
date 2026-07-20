@@ -13,6 +13,7 @@
     "test:notes": "node --test --experimental-strip-types lib/notes-domain.test.ts",
     "test:assemblyai": "node --test --experimental-strip-types lib/assemblyai-streaming.test.ts",
     "test:whiteboard": "node --test --experimental-strip-types lib/whiteboard-domain.test.ts",
+    "test:spaces": "node --test --experimental-strip-types lib/spaces-domain.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"

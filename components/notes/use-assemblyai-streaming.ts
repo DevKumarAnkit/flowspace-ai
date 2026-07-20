@@ -233,15 +233,21 @@ export function useAssemblyAIStreaming({ onFinalTranscript }: { onFinalTranscrip
     }
   }, [finish, sendTerminate, stopRecording, updatePreview, updateStatus]);
 
-  useEffect(() => () => {
-    mountedRef.current = false;
-    sessionRef.current += 1;
-    clearTimers();
-    releaseAudio();
-    const socket = socketRef.current;
-    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "Terminate" }));
-    socket?.close();
-    socketRef.current = null;
+  useEffect(() => {
+    // React Strict Mode runs an extra setup/cleanup cycle in development.
+    // Restore the mounted flag during every setup so recording state remains
+    // visible and the same button can stop the active session.
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      sessionRef.current += 1;
+      clearTimers();
+      releaseAudio();
+      const socket = socketRef.current;
+      if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "Terminate" }));
+      socket?.close();
+      socketRef.current = null;
+    };
   }, [clearTimers, releaseAudio]);
 
   const clearNotice = useCallback(() => setNotice(""), []);

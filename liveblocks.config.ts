@@ -20,7 +20,8 @@ declare global {
       boardId: number;
     };
     ThreadMetadata: {
-      taskId: string;
+      taskId?: string;
+      pageId?: string;
     };
     CommentMetadata: Record<string, never>;
     RoomInfo: Record<string, never>;

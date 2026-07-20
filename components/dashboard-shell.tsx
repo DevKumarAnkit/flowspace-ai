@@ -59,7 +59,7 @@ const navigation: NavigationGroup[] = [
     items: [
       { label: "Notes", icon: StickyNote, color: "icon-green", href: "/notes" },
       { label: "Whiteboard", icon: MousePointer2, color: "icon-cyan", href: "/whiteboard" },
-      { label: "Pages / Spaces", icon: FileText, color: "icon-orange" },
+      { label: "Pages / Spaces", icon: FileText, color: "icon-orange", href: "/spaces" },
       { label: "AI Template Builder", icon: LayoutTemplate, color: "icon-pink", badge: "AI" },
     ],
   },
@@ -203,11 +203,11 @@ export function DashboardShell() {
             </section>
 
             <section className="panel spaces-panel">
-              <div className="panel-heading"><div><span className="heading-icon blue-bg"><FileText size={16} /></span><div><h2>Your spaces</h2><p>Jump back into your work</p></div></div><button>View all <ArrowUpRight size={14} /></button></div>
+              <div className="panel-heading"><div><span className="heading-icon blue-bg"><FileText size={16} /></span><div><h2>Your spaces</h2><p>Jump back into your work</p></div></div><Link href="/spaces">View all <ArrowUpRight size={14} /></Link></div>
               <div className="space-cards">
                 <article className="space-card lavender"><div><span>🚀</span><button><MoreHorizontal size={16} /></button></div><h3>Product Hub</h3><p>12 pages · Updated 2h ago</p><div className="mini-avatars"><span>MK</span><span>JL</span><i>+3</i></div></article>
                 <article className="space-card mint"><div><span>🌿</span><button><MoreHorizontal size={16} /></button></div><h3>Design System</h3><p>8 pages · Updated yesterday</p><div className="mini-avatars"><span>AM</span><span>SA</span><i>+2</i></div></article>
-                <button className="new-space"><span><Plus size={19} /></span><strong>New space</strong><small>Start something fresh</small></button>
+                <Link className="new-space" href="/spaces"><span><Plus size={19} /></span><strong>New space</strong><small>Start something fresh</small></Link>
               </div>
             </section>
           </div>
