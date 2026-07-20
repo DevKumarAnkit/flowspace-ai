@@ -3,7 +3,7 @@
 import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { notes } from "@/db/schema";
+import { calendarCategories, notes } from "@/db/schema";
 import {
   cleanNoteTitle,
   duplicateTitle,
@@ -21,6 +21,7 @@ import { requireDatabaseUser } from "@/lib/require-database-user";
 function serializeNote(row: typeof notes.$inferSelect): Note {
   return {
     id: row.id,
+    categoryId: row.categoryId,
     title: row.title,
     content: row.content as TiptapDocument,
     color: row.color as NoteColor,
@@ -110,6 +111,19 @@ export async function setNoteIconAction(id: number, icon: string) {
   const [row] = await db.update(notes).set({ icon: validNoteIcon(icon), updatedAt: new Date() })
     .where(and(eq(notes.id, id), eq(notes.userId, user.id), isNull(notes.trashedAt))).returning();
   if (!row) throw new Error("Restore this note before changing its icon.");
+  refreshNotes();
+  return serializeNote(row);
+}
+
+export async function setNoteCategoryAction(id: number, categoryId: number | null) {
+  const user = await requireDatabaseUser("notes");
+  await ownedNote(id, user.id);
+  if (categoryId !== null) {
+    const [category] = await db.select({ id: calendarCategories.id }).from(calendarCategories).where(and(eq(calendarCategories.id, categoryId), eq(calendarCategories.userId, user.id), eq(calendarCategories.scope, "note"))).limit(1);
+    if (!category) throw new Error("That note category is not available.");
+  }
+  const [row] = await db.update(notes).set({ categoryId, updatedAt: new Date() }).where(and(eq(notes.id, id), eq(notes.userId, user.id), isNull(notes.trashedAt))).returning();
+  if (!row) throw new Error("Restore this note before changing its category.");
   refreshNotes();
   return serializeNote(row);
 }

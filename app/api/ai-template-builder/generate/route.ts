@@ -2,6 +2,8 @@ import { GoogleGenAI } from "@google/genai";
 import { db } from "@/db";
 import { generatedApps } from "@/db/schema";
 import { requireDatabaseUser } from "@/lib/require-database-user";
+import { getUserSettings } from "@/lib/settings-server";
+import { hasProAccess } from "@/lib/billing";
 import {
   GENERATED_APP_ICONS,
   createGeneratedAppFallback,
@@ -65,11 +67,14 @@ export async function POST(request: Request) {
   let user;
   try { user = await requireDatabaseUser("AI Template Builder"); }
   catch { return Response.json({ error: "You must be signed in to generate an app." }, { status: 401 }); }
+  const { settings } = await getUserSettings();
+  if (!settings.aiFeatures.templateBuilder) return Response.json({ error: "AI Template Builder is disabled in your settings." }, { status: 403 });
+  if (!(await hasProAccess())) return Response.json({ error: "AI Template Builder is available with Flowspace Pro." }, { status: 403 });
   let prompt: string;
   try { prompt = validateGeneratedAppPrompt(await request.json()); }
   catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Enter a valid prompt." }, { status: 400 }); }
   const apiKey = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_TEMPLATE_MODEL || "gemini-2.5-flash-lite";
+  const model = settings.aiModel || process.env.GEMINI_TEMPLATE_MODEL || "gemini-3.1-flash-lite";
   if (!apiKey) {
     const definition = createGeneratedAppFallback(prompt);
     const state = initialGeneratedAppState(definition);

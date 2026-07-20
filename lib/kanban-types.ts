@@ -15,6 +15,7 @@ export type KanbanTask = {
   description: string;
   dueDate: string;
   priority: KanbanPriority;
+  categoryId: number | null;
   position: number;
   notesLinked: boolean;
   calendarItemId: number | null;
@@ -61,6 +62,7 @@ export type KanbanTaskInput = {
   description: string;
   dueDate: string;
   priority: KanbanPriority;
+  categoryId: number | null;
   notesLinked: boolean;
   calendarSync: boolean;
   labelIds: number[];

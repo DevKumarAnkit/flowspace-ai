@@ -1,6 +1,8 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { GoogleGenAI } from "@google/genai";
 import { validateRefineInput } from "@/lib/notes-domain";
+import { getUserSettings } from "@/lib/settings-server";
+import { hasProAccess } from "@/lib/billing";
 
 export const runtime = "nodejs";
 
@@ -15,6 +17,9 @@ const ACTION_INSTRUCTIONS = {
 
 export async function POST(request: Request) {
   if (!(await currentUser())) return Response.json({ error: "You must be signed in to refine notes." }, { status: 401 });
+  const { settings } = await getUserSettings();
+  if (!settings.aiFeatures.notesRefine) return Response.json({ error: "AI Refine is disabled in your settings." }, { status: 403 });
+  if (!(await hasProAccess())) return Response.json({ error: "AI Refine is available with Flowspace Pro." }, { status: 403 });
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return Response.json({ error: "Gemini is not configured yet." }, { status: 503 });
 
@@ -22,9 +27,9 @@ export async function POST(request: Request) {
     const input = validateRefineInput(await request.json());
     const ai = new GoogleGenAI({ apiKey });
     const interaction = await ai.interactions.create({
-      model: process.env.GEMINI_MODEL || "gemini-3.5-flash",
+      model: settings.aiModel || process.env.GEMINI_MODEL || "gemini-3.5-flash",
       store: false,
-      system_instruction: "You are a precise writing editor. Return only the revised text, with no commentary, labels, markdown fences, or quotation marks. Preserve the source language, meaning, paragraph breaks, and factual claims.",
+      system_instruction: `You are a precise writing editor. Be ${settings.aiBehavior} and use a ${settings.aiTone} voice unless the request specifies another tone. Return only the revised text, with no commentary, labels, markdown fences, or quotation marks. Preserve the source language, meaning, paragraph breaks, and factual claims.`,
       generation_config: { thinking_level: "low", max_output_tokens: 8192 },
       input: `${ACTION_INSTRUCTIONS[input.action]}${input.tone ? ` Use a ${input.tone.toLowerCase()} tone.` : ""}\n\nText to revise:\n${input.text}`,
     });

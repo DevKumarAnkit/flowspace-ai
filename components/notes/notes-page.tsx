@@ -17,16 +17,17 @@ import {
   ArrowLeft, Bold, BookOpen, Briefcase, Check, CheckSquare, ChevronDown, Code2, Copy, Download, FileText, Heading1, Heading2,
   Heading3, Highlighter, Italic, Lightbulb, Link2, List, ListOrdered, LoaderCircle, MoreHorizontal, Palette,
   Mic, Pin, Plus, Quote, Redo2, RefreshCcw, RotateCcw, Search, Sparkles, Strikethrough, Trash2, Underline as UnderlineIcon,
-  Star, Undo2, WandSparkles, X,
+  Save, Star, Tag, Undo2, WandSparkles, X,
 } from "lucide-react";
 import {
   createNoteAction, duplicateNoteAction, permanentlyDeleteNoteAction, renameNoteAction, restoreNoteAction,
-  saveNoteAction, setNoteColorAction, setNoteIconAction, setNotePinnedAction, trashNoteAction,
+  saveNoteAction, setNoteCategoryAction, setNoteColorAction, setNoteIconAction, setNotePinnedAction, trashNoteAction,
 } from "@/app/notes/actions";
 import { formatNoteTime, NOTE_COLORS, NOTE_ICONS, sortNotes, type Note, type NoteIcon, type RefineAction, type RefineTone, type TiptapDocument } from "@/lib/notes-domain";
 import { SlashCommand } from "@/components/notes/slash-command";
 import { useAssemblyAIStreaming } from "@/components/notes/use-assemblyai-streaming";
 import { transcriptWithBoundarySpacing } from "@/lib/assemblyai-streaming";
+import type { UserCategory } from "@/lib/settings-domain";
 
 type Mode = "active" | "pinned" | "trash";
 type SaveStatus = "saved" | "dirty" | "saving" | "error";
@@ -46,12 +47,13 @@ function LocalNoteTime({ value, prefix = "" }: { value: string; prefix?: string 
   return <>{prefix}{label}</>;
 }
 
-export function NotesPage({ initialNotes, initialSelectedNoteId }: { initialNotes: Note[]; initialSelectedNoteId: number | null }) {
+export function NotesPage({ initialNotes, initialSelectedNoteId, initialCategories, autoSave, aiRefine }: { initialNotes: Note[]; initialSelectedNoteId: number | null; initialCategories: UserCategory[]; autoSave: boolean; aiRefine: boolean }) {
   const router = useRouter();
   const [notes, setNotes] = useState(initialNotes);
   const [selectedId, setSelectedId] = useState(initialSelectedNoteId);
   const [mode, setMode] = useState<Mode>(() => initialNotes.find((note) => note.id === initialSelectedNoteId)?.trashedAt ? "trash" : "active");
   const [query, setQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<number | "all">("all");
   const [menuId, setMenuId] = useState<number | null>(null);
   const [renameId, setRenameId] = useState<number | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
@@ -66,8 +68,9 @@ export function NotesPage({ initialNotes, initialSelectedNoteId }: { initialNote
   const visibleNotes = useMemo(() => {
     const source = mode === "active" ? activeNotes : mode === "pinned" ? pinnedNotes : trashNotes;
     const normalized = query.trim().toLowerCase();
-    return normalized ? source.filter((note) => note.title.toLowerCase().includes(normalized)) : source;
-  }, [activeNotes, mode, pinnedNotes, query, trashNotes]);
+    const categorized = categoryFilter === "all" ? source : source.filter((note) => note.categoryId === categoryFilter);
+    return normalized ? categorized.filter((note) => note.title.toLowerCase().includes(normalized)) : categorized;
+  }, [activeNotes, categoryFilter, mode, pinnedNotes, query, trashNotes]);
   const selected = notes.find((note) => note.id === selectedId) ?? null;
 
   const replaceNote = useCallback((note: Note) => setNotes((current) => current.map((entry) => entry.id === note.id ? note : entry)), []);
@@ -150,6 +153,7 @@ export function NotesPage({ initialNotes, initialSelectedNoteId }: { initialNote
           <button className="notes-new" onClick={createNote}><Plus size={15} /> New Note</button>
         </div>
         <label className="notes-search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${mode === "trash" ? "Trash" : "notes"}…`} />{query && <button onClick={() => setQuery("")} aria-label="Clear search"><X size={12} /></button>}</label>
+        <select className="notes-category-filter" aria-label="Filter notes by category" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value === "all" ? "all" : Number(event.target.value))}><option value="all">All categories</option>{initialCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
         <div className="notes-filter-tabs" aria-label="Note status filters">
           <button className={mode === "active" ? "active" : ""} onClick={() => void openMode("active")}><FileText size={12} /><span>Active</span><small>{activeNotes.length}</small></button>
           <button className={mode === "pinned" ? "active" : ""} onClick={() => void openMode("pinned")}><Pin size={12} /><span>Pinned</span><small>{pinnedNotes.length}</small></button>
@@ -169,7 +173,7 @@ export function NotesPage({ initialNotes, initialSelectedNoteId }: { initialNote
               {mode !== "trash" && <button className={`note-pin ${note.isPinned ? "active" : ""}`} aria-label={note.isPinned ? "Unpin note" : "Pin note"} onClick={() => perform(async () => replaceNote(await setNotePinnedAction(note.id, !note.isPinned)))}><Pin size={12} fill={note.isPinned ? "currentColor" : "none"} /></button>}
               {mode === "trash" && <button className="note-restore" aria-label={`Move ${note.title} to Notes`} title="Move to Notes" onClick={() => restore(note)}><RefreshCcw size={12} /><span>Move</span></button>}
               <button className="note-more" aria-label={`Actions for ${note.title}`} onClick={() => setMenuId(menuId === note.id ? null : note.id)}><MoreHorizontal size={14} /></button>
-              {menuId === note.id && <NoteMenu note={note} mode={mode} close={() => setMenuId(null)} onRename={() => { setRenameId(note.id); setRenameTitle(note.title); setMenuId(null); }} onUpdated={replaceNote} perform={perform} onTrash={() => trash(note)} onRestore={() => restore(note)} onDelete={() => deleteForever(note)} onDuplicate={async () => { const copy = await duplicateNoteAction(note.id); setNotes((current) => [copy, ...current]); await choose(copy.id); }} />}
+              {menuId === note.id && <NoteMenu note={note} categories={initialCategories} mode={mode} close={() => setMenuId(null)} onRename={() => { setRenameId(note.id); setRenameTitle(note.title); setMenuId(null); }} onUpdated={replaceNote} perform={perform} onTrash={() => trash(note)} onRestore={() => restore(note)} onDelete={() => deleteForever(note)} onDuplicate={async () => { const copy = await duplicateNoteAction(note.id); setNotes((current) => [copy, ...current]); await choose(copy.id); }} />}
             </div>
           ))}
           {!visibleNotes.length && <div className="notes-empty-list"><FileText size={23} /><strong>{query ? "No matching notes" : mode === "trash" ? "Trash is empty" : mode === "pinned" ? "No pinned notes" : "A quiet place for ideas"}</strong><span>{query ? "Try a different title." : mode === "trash" ? "Deleted notes will wait here." : mode === "pinned" ? "Pin an important note to keep it close." : "Create your first note to begin."}</span>{mode === "active" && !query && <button onClick={createNote}><Plus size={13} /> New Note</button>}</div>}
@@ -181,21 +185,22 @@ export function NotesPage({ initialNotes, initialSelectedNoteId }: { initialNote
         {message && <div className="notes-toast" role="status">{message}<button aria-label="Dismiss" onClick={() => setMessage("")}><X size={13} /></button></div>}
         {selected ? (
           selected.trashedAt ? <TrashPreview key={selected.id} note={selected} back={() => setMobileEditor(false)} restore={() => restore(selected)} deleteForever={() => deleteForever(selected)} /> :
-            <NoteEditor key={selected.id} note={selected} onSaved={replaceNote} registerFlush={(flush) => { flushRef.current = flush; }} back={() => setMobileEditor(false)} />
+            <NoteEditor key={selected.id} note={selected} autoSave={autoSave} aiRefine={aiRefine} onSaved={replaceNote} registerFlush={(flush) => { flushRef.current = flush; }} back={() => setMobileEditor(false)} />
         ) : <EmptyEditor mode={mode} createNote={createNote} back={() => setMobileEditor(false)} />}
       </main>
     </div>
   );
 }
 
-function NoteMenu({ note, mode, close, onRename, onUpdated, perform, onTrash, onRestore, onDelete, onDuplicate }: {
-  note: Note; mode: Mode; close: () => void; onRename: () => void; onUpdated: (note: Note) => void; perform: (task: () => Promise<void>) => void;
+function NoteMenu({ note, categories, mode, close, onRename, onUpdated, perform, onTrash, onRestore, onDelete, onDuplicate }: {
+  note: Note; categories: UserCategory[]; mode: Mode; close: () => void; onRename: () => void; onUpdated: (note: Note) => void; perform: (task: () => Promise<void>) => void;
   onTrash: () => void; onRestore: () => void; onDelete: () => void; onDuplicate: () => Promise<void>;
 }) {
   return <div className="note-menu" role="menu" onMouseLeave={close}>
     {mode !== "trash" ? <>
       <button onClick={onRename}><FileText size={13} /> Rename</button>
       <button onClick={() => perform(onDuplicate)}><Copy size={13} /> Duplicate</button>
+      <label className="note-category-menu"><span><Tag size={12} /> Category</span><select value={note.categoryId ?? ""} onChange={(event) => perform(async () => onUpdated(await setNoteCategoryAction(note.id, event.target.value ? Number(event.target.value) : null)))}><option value="">Uncategorized</option>{categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>
       <div className="note-color-menu"><span><Palette size={12} /> Color</span><div>{NOTE_COLORS.map((color) => <button key={color} aria-label={`Choose ${color}`} className={note.color === color ? "active" : ""} style={{ background: color }} onClick={() => perform(async () => { onUpdated(await setNoteColorAction(note.id, color)); close(); })}>{note.color === color && <Check size={9} />}</button>)}</div></div>
       <div className="note-icon-menu"><span><Sparkles size={12} /> Icon</span><div>{NOTE_ICONS.map((icon) => <button key={icon} aria-label={`Choose ${icon} icon`} className={note.icon === icon ? "active" : ""} onClick={() => perform(async () => { onUpdated(await setNoteIconAction(note.id, icon)); close(); })}><NoteGlyph icon={icon} size={13} /></button>)}</div></div>
       <button className="danger" onClick={onTrash}><Trash2 size={13} /> Delete</button>
@@ -206,7 +211,7 @@ function NoteMenu({ note, mode, close, onRename, onUpdated, perform, onTrash, on
   </div>;
 }
 
-function NoteEditor({ note, onSaved, registerFlush, back }: { note: Note; onSaved: (note: Note) => void; registerFlush: (flush: () => Promise<void>) => void; back: () => void }) {
+function NoteEditor({ note, autoSave, aiRefine, onSaved, registerFlush, back }: { note: Note; autoSave: boolean; aiRefine: boolean; onSaved: (note: Note) => void; registerFlush: (flush: () => Promise<void>) => void; back: () => void }) {
   const [title, setTitle] = useState(note.title);
   const [status, setStatus] = useState<SaveStatus>("saved");
   const [words, setWords] = useState(0);
@@ -294,7 +299,7 @@ function NoteEditor({ note, onSaved, registerFlush, back }: { note: Note; onSave
     pending.current = { title: nextTitle.trim() || "Untitled Note", content: content ?? editor!.getJSON() as TiptapDocument };
     setStatus("dirty");
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => { void flush().catch(() => undefined); }, 750);
+    if (autoSave) timer.current = setTimeout(() => { void flush().catch(() => undefined); }, 750);
   }
 
   useEffect(() => {
@@ -363,7 +368,7 @@ function NoteEditor({ note, onSaved, registerFlush, back }: { note: Note; onSave
             <MarkButton label="Italic" active={editor.isActive("italic")} action={() => editor.chain().focus().toggleItalic().run()}><Italic size={13} /></MarkButton>
             <MarkButton label="Underline" active={editor.isActive("underline")} action={() => editor.chain().focus().toggleUnderline().run()}><UnderlineIcon size={13} /></MarkButton>
             <span className="menu-divider" />
-            <button className={`ai-refine-trigger ${aiOpen ? "active" : ""}`} onClick={() => { setAiOpen(!aiOpen); setAiError(""); }}><Sparkles size={13} /> AI Refine <ChevronDown size={11} /></button>
+            {aiRefine && <button className={`ai-refine-trigger ${aiOpen ? "active" : ""}`} onClick={() => { setAiOpen(!aiOpen); setAiError(""); }}><Sparkles size={13} /> AI Refine <ChevronDown size={11} /></button>}
             {aiOpen && <AIRefineMenu loading={aiLoading} error={aiError} run={async (action, tone) => {
               const { from, to } = editor.state.selection;
               const text = editor.state.doc.textBetween(from, to, "\n");
@@ -383,7 +388,7 @@ function NoteEditor({ note, onSaved, registerFlush, back }: { note: Note; onSave
         <EditorContent editor={editor} />
       </div>
     </div>
-    <footer className="note-editor-footer"><div><span>{words.toLocaleString()} {words === 1 ? "word" : "words"}</span><span><LocalNoteTime value={note.updatedAt} prefix="Last updated " /></span></div><span><i /> Auto-save on</span></footer>
+    <footer className="note-editor-footer"><div><span>{words.toLocaleString()} {words === 1 ? "word" : "words"}</span><span><LocalNoteTime value={note.updatedAt} prefix="Last updated " /></span></div>{autoSave ? <span><i /> Auto-save on</span> : <button className="note-manual-save" disabled={status !== "dirty"} onClick={() => void flush().catch(() => undefined)}><Save size={12} /> Save changes</button>}</footer>
   </section>;
 }
 

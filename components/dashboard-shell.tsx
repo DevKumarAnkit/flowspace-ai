@@ -125,7 +125,7 @@ export function DashboardShell() {
               <div className="upgrade-icon"><WandSparkles size={16} /></div>
               <strong>Unlock your flow</strong>
               <span>Get unlimited AI & spaces.</span>
-              <button>Explore Pro <ArrowUpRight size={13} /></button>
+              <Link href="/settings?section=subscription">Explore Pro <ArrowUpRight size={13} /></Link>
             </div>
           )}
           <button className="profile-row" title={collapsed ? "Avery Morgan" : undefined}>

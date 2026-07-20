@@ -20,6 +20,7 @@ export const EMPTY_NOTE_DOCUMENT: TiptapDocument = {
 
 export type Note = {
   id: number;
+  categoryId: number | null;
   title: string;
   content: TiptapDocument;
   color: NoteColor;

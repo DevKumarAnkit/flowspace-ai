@@ -1,4 +1,6 @@
 import { currentUser } from "@clerk/nextjs/server";
+import { getUserSettings } from "@/lib/settings-server";
+import { hasProAccess } from "@/lib/billing";
 import { GoogleGenAI } from "@google/genai";
 import { DIAGRAM_COLORS, validateAiDiagram, validateDiagramPrompt } from "@/lib/whiteboard-domain";
 
@@ -79,8 +81,11 @@ function stripJsonFences(value: string) {
 
 export async function POST(request: Request) {
   if (!(await currentUser())) return Response.json({ error: "You must be signed in to generate diagrams." }, { status: 401 });
+  const { settings } = await getUserSettings();
+  if (!settings.aiFeatures.whiteboardDiagrams) return Response.json({ error: "AI diagrams are disabled in your settings." }, { status: 403 });
+  if (!(await hasProAccess())) return Response.json({ error: "AI diagrams are available with Flowspace Pro." }, { status: 403 });
   const apiKey = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash";
+  const model = settings.aiModel || process.env.GEMINI_MODEL || "gemini-3.5-flash";
   if (!apiKey) {
     console.error("[whiteboard-ai] Missing required server environment variable", { variable: "GEMINI_API_KEY", model });
     return Response.json({ error: "Gemini is not configured. Add GEMINI_API_KEY on the server." }, { status: 503 });
@@ -101,7 +106,7 @@ export async function POST(request: Request) {
     const interaction = await ai.interactions.create({
       model,
       store: false,
-      system_instruction: "You design compact, readable whiteboard diagrams. Convert the request into a grid of editable nodes and directed edges. Use rows for vertical progression and columns for branches. Avoid duplicate grid cells. Use diamonds only for decisions, ellipses for starts/ends or central mind-map ideas, and rectangles otherwise. Architecture diagrams should group related tiers by rows. User journeys and processes should flow left-to-right unless the prompt requests otherwise. Return only schema-compliant JSON.",
+      system_instruction: `You design compact, readable whiteboard diagrams with a ${settings.aiBehavior} approach. Convert the request into a grid of editable nodes and directed edges. Use rows for vertical progression and columns for branches. Avoid duplicate grid cells. Use diamonds only for decisions, ellipses for starts/ends or central mind-map ideas, and rectangles otherwise. Architecture diagrams should group related tiers by rows. User journeys and processes should flow left-to-right unless the prompt requests otherwise. Return only schema-compliant JSON.`,
       generation_config: { thinking_level: "low", max_output_tokens: 8192 },
       response_format: { type: "text", mime_type: "application/json", schema: diagramSchema },
       input: prompt,

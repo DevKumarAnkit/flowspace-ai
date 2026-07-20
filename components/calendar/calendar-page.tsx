@@ -77,11 +77,11 @@ function getSeriesScope(item: CalendarItem, verb: string): "occurrence" | "serie
   return window.confirm(`${verb} only this occurrence?\n\nChoose OK for this occurrence, or Cancel for the entire series.`) ? "occurrence" : "series";
 }
 
-export function CalendarPage({ initialCategories, initialItems }: { initialCategories: CalendarCategory[]; initialItems: CalendarItem[] }) {
+export function CalendarPage({ initialCategories, initialItems, defaultView, browserReminders }: { initialCategories: CalendarCategory[]; initialItems: CalendarItem[]; defaultView: CalendarView; browserReminders: boolean }) {
   const router = useRouter();
   const [categories, setCategories] = useState(initialCategories);
   const [items, setItems] = useState(initialItems);
-  const [view, setView] = useState<CalendarView>("month");
+  const [view, setView] = useState<CalendarView>(defaultView);
   const [anchor, setAnchor] = useState(() => new Date());
   const [editor, setEditor] = useState<{ form: CalendarItemInput; occurrence?: CalendarOccurrence } | null>(null);
   const [categoryManager, setCategoryManager] = useState(false);
@@ -105,6 +105,10 @@ export function CalendarPage({ initialCategories, initialItems }: { initialCateg
       const days = monthGrid(anchor);
       return { start: days[0], end: addDays(days[41], 1) };
     }
+    if (view === "day") {
+      const start = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
+      return { start, end: addDays(start, 1) };
+    }
     const start = startOfMondayWeek(anchor);
     return { start, end: addDays(start, 7) };
   }, [anchor, view]);
@@ -112,7 +116,7 @@ export function CalendarPage({ initialCategories, initialItems }: { initialCateg
   const drafts = items.filter((item) => item.isDraft);
 
   useEffect(() => {
-    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    if (!browserReminders || typeof Notification === "undefined" || Notification.permission !== "granted") return;
     const now = new Date();
     const horizon = new Date(now.getTime() + 48 * 3_600_000);
     const reminderOccurrences = expandOccurrences(items, now, horizon).filter((entry) => entry.type === "reminder");
@@ -129,7 +133,7 @@ export function CalendarPage({ initialCategories, initialItems }: { initialCateg
       }
     });
     return () => timers.forEach(window.clearTimeout);
-  }, [items]);
+  }, [items, browserReminders]);
 
   function categoryFor(item: CalendarItem) {
     return categories.find((category) => category.id === item.categoryId);
@@ -284,7 +288,7 @@ export function CalendarPage({ initialCategories, initialItems }: { initialCateg
   function navigate(amount: number) {
     const next = new Date(anchor);
     if (view === "month") next.setMonth(next.getMonth() + amount);
-    else next.setDate(next.getDate() + amount * 7);
+    else next.setDate(next.getDate() + amount * (view === "day" ? 1 : 7));
     setAnchor(next);
   }
 
@@ -304,13 +308,14 @@ export function CalendarPage({ initialCategories, initialItems }: { initialCateg
           <button className="calendar-today" onClick={() => setAnchor(new Date())}>Today</button>
           <button aria-label="Previous period" onClick={() => navigate(-1)}><ChevronLeft size={17} /></button>
           <button aria-label="Next period" onClick={() => navigate(1)}><ChevronRight size={17} /></button>
-          <h2>{title}</h2>
+          <h2>{view === "day" ? anchor.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" }) : title}</h2>
         </div>
         <div className="calendar-toolbar-right">
           <button className="draft-mobile-trigger" onClick={() => setDraftDrawer(true)}><ListTodo size={15} /> Drafts <span>{drafts.length}</span></button>
           <div className="view-switcher" aria-label="Calendar view">
             <button className={view === "month" ? "active" : ""} onClick={() => setView("month")}>Month</button>
             <button className={view === "week" ? "active" : ""} onClick={() => setView("week")}>Week</button>
+            <button className={view === "day" ? "active" : ""} onClick={() => setView("day")}>Day</button>
           </div>
         </div>
       </section>
@@ -323,7 +328,7 @@ export function CalendarPage({ initialCategories, initialItems }: { initialCateg
               runMutation(() => toggleCalendarTaskAction(occurrence.id, !occurrence.isCompleted));
             }} />
           ) : (
-            <WeekView start={visibleRange.start} occurrences={occurrences} categories={categories} openCreate={openCreate} openOccurrence={openOccurrence} startNativeDrag={startNativeDrag} startTouchDrag={startTouchDrag} handleDrop={handleDrop} toggleTask={(occurrence) => {
+            <WeekView start={visibleRange.start} dayCount={view === "day" ? 1 : 7} occurrences={occurrences} categories={categories} openCreate={openCreate} openOccurrence={openOccurrence} startNativeDrag={startNativeDrag} startTouchDrag={startTouchDrag} handleDrop={handleDrop} toggleTask={(occurrence) => {
               setItems((current) => current.map((item) => item.id === occurrence.id ? { ...item, isCompleted: !item.isCompleted } : item));
               runMutation(() => toggleCalendarTaskAction(occurrence.id, !occurrence.isCompleted));
             }} />
@@ -366,11 +371,12 @@ function MonthView({ anchor, occurrences, categories, expandedDay, setExpandedDa
   })}</div></div>;
 }
 
-function WeekView({ start, occurrences, categories, ...actions }: ViewProps & { start: Date }) {
-  const days = Array.from({ length: 7 }, (_, index) => addDays(start, index));
+function WeekView({ start, dayCount, occurrences, categories, ...actions }: ViewProps & { start: Date; dayCount: number }) {
+  const days = Array.from({ length: dayCount }, (_, index) => addDays(start, index));
+  const columns = { "--calendar-day-count": dayCount, "--calendar-day-min": dayCount === 1 ? "320px" : "100px" } as React.CSSProperties;
   const now = new Date();
   const timeTop = (now.getHours() * 60 + now.getMinutes()) * 0.8;
-  return <div className="week-scroll"><div className="week-canvas">
+  return <div className="week-scroll"><div className="week-canvas" style={columns}>
     <div className="week-header"><span className="week-timezone">LOCAL</span>{days.map((day) => <div key={dateKey(day)}><span>{day.toLocaleDateString(undefined, { weekday: "short" })}</span><strong className={dateKey(day) === dateKey(now) ? "today" : ""}>{day.getDate()}</strong></div>)}</div>
     <div className="all-day-row"><span>all-day</span>{days.map((day) => <div key={dateKey(day)} data-drop-date={dateKey(day)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => actions.handleDrop(event, day)}>{occurrences.filter((entry) => entry.allDay && dateKey(entry.occurrenceStart) === dateKey(day)).map((occurrence) => <EventCard key={occurrence.occurrenceKey} occurrence={occurrence} category={categories.find((category) => category.id === occurrence.categoryId)} compact open={() => actions.openOccurrence(occurrence)} toggle={() => actions.toggleTask(occurrence)} startNativeDrag={actions.startNativeDrag} startTouchDrag={actions.startTouchDrag} />)}</div>)}</div>
     <div className="week-time-grid"><div className="hour-labels">{HOURS.map((hour) => <span key={hour} style={{ top: hour * 48 }}>{new Date(2020, 0, 1, hour).toLocaleTimeString(undefined, { hour: "numeric" })}</span>)}</div>{days.map((day) => {
@@ -444,7 +450,7 @@ function ItemEditor({ editor, setEditor, categories, onSubmit, onDelete, onManag
     <div className="dialog-body">
       <div className="type-switch"><button type="button" className={form.type === "task" ? "active" : ""} onClick={() => update("type", "task")}><ListTodo size={14} /> Task</button><button type="button" className={form.type === "reminder" ? "active" : ""} onClick={() => update("type", "reminder")} disabled={form.isDraft}><BellRing size={14} /> Reminder</button></div>
       <label className="field field-full"><span>Title</span><input autoFocus required maxLength={160} value={form.title} onChange={(event) => update("title", event.target.value)} placeholder="What would you like to accomplish?" /></label>
-      <div className="field-row"><label className="field"><span>Category</span><select value={form.categoryId ?? ""} onChange={(event) => update("categoryId", event.target.value ? Number(event.target.value) : null)}><option value="">Uncategorized</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><button className="manage-category-button" type="button" onClick={onManageCategories}>Manage colors</button></div>
+      <div className="field-row"><label className="field"><span>Category</span><select value={form.categoryId ?? ""} onChange={(event) => update("categoryId", event.target.value ? Number(event.target.value) : null)}><option value="">Uncategorized</option>{categories.filter((category) => category.scope === (form.type === "reminder" ? "reminder" : "task") || category.scope === "calendar").map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><button className="manage-category-button" type="button" onClick={onManageCategories}>Manage colors</button></div>
       {!form.isDraft && <><label className="all-day-toggle"><input type="checkbox" checked={form.allDay} onChange={(event) => toggleAllDay(event.target.checked)} /><span /> All-day</label><div className={`schedule-fields ${form.allDay ? "all-day" : ""}`}><label className="field"><span>Date</span><input type="date" required value={scheduledDate} onChange={(event) => updateScheduleDate(event.target.value)} /></label>{!form.allDay && <label className="field"><span>Time</span><input type="time" required value={startTime} onChange={(event) => setEditor((current) => current ? { ...current, form: { ...current.form, ...timedRange(scheduledDate, event.target.value) } } : current)} /></label>}</div>
       <div className="repeat-setting"><label className="all-day-toggle"><input type="checkbox" checked={form.recurrenceFrequency !== "none"} onChange={(event) => setEditor((current) => current ? { ...current, form: { ...current.form, recurrenceFrequency: event.target.checked ? "weekly" : "none", recurrenceEndMode: "never", recurrenceEndDate: null, recurrenceCount: null } } : current)} /><span /> Repeat</label>{form.recurrenceFrequency !== "none" && <label className="field"><span>Frequency</span><select value={form.recurrenceFrequency} onChange={(event) => update("recurrenceFrequency", event.target.value as CalendarItemInput["recurrenceFrequency"])}><option value="daily">Every day</option><option value="weekly">Every week</option><option value="monthly">Every month</option><option value="yearly">Every year</option></select></label>}</div>
       {form.type === "reminder" && <label className="field field-half"><span>Notify me</span><select value={form.notificationOffset ?? 10} onChange={(event) => update("notificationOffset", Number(event.target.value))}><option value={0}>At start</option><option value={5}>5 minutes before</option><option value={10}>10 minutes before</option><option value={30}>30 minutes before</option><option value={1440}>1 day before</option></select></label>}</>}

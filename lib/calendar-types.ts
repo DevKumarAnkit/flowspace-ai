@@ -1,4 +1,4 @@
-export type CalendarView = "month" | "week";
+export type CalendarView = "month" | "week" | "day";
 export type CalendarItemType = "task" | "reminder";
 export type RecurrenceFrequency = "none" | "daily" | "weekly" | "monthly" | "yearly";
 export type RecurrenceEndMode = "never" | "date" | "count";
@@ -7,6 +7,8 @@ export type CalendarCategory = {
   id: number;
   name: string;
   color: string;
+  scope: "calendar" | "task" | "reminder";
+  icon: string;
   isDefault: boolean;
 };
 
