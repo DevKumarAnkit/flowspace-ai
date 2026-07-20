@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import {
   calendarItems,
+  calendarCategories,
   kanbanBoardMembers,
   kanbanBoards,
   kanbanColumns,
@@ -70,6 +71,7 @@ export async function getKanbanData(): Promise<KanbanData> {
           description: task.description ?? "",
           dueDate: task.dueDate,
           priority: task.priority as "low" | "medium" | "high",
+          categoryId: task.categoryId,
           position: task.position,
           notesLinked: task.notesLinked,
           calendarItemId: task.calendarItemId,
@@ -220,6 +222,10 @@ async function checkedTaskContext(userId: number, input: KanbanTaskInput) {
   if (!column) throw new Error("Column not found.");
   const labels = input.labelIds.length ? await db.select().from(kanbanLabels).where(and(eq(kanbanLabels.boardId, input.boardId), inArray(kanbanLabels.id, input.labelIds))) : [];
   if (labels.length !== new Set(input.labelIds).size) throw new Error("One or more labels are unavailable.");
+  if (input.categoryId !== null) {
+    const [category] = await db.select({ id: calendarCategories.id }).from(calendarCategories).where(and(eq(calendarCategories.id, input.categoryId), eq(calendarCategories.userId, userId), eq(calendarCategories.scope, "task"))).limit(1);
+    if (!category) throw new Error("That task category is not available.");
+  }
   return { columns, column };
 }
 
@@ -240,6 +246,7 @@ export async function saveKanbanTaskAction(input: KanbanTaskInput) {
     description: fields.description || null,
     dueDate: input.dueDate,
     priority: fields.priority,
+    categoryId: input.categoryId,
     notesLinked: input.notesLinked,
     position,
     lastNonCompletionColumnId: column.isCompletion ? existing?.lastNonCompletionColumnId ?? null : column.id,

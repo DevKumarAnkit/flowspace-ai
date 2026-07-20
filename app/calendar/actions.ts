@@ -22,8 +22,8 @@ async function ensureDefaultCategories(user: Awaited<ReturnType<typeof requireDa
   for (const [name, color] of DEFAULT_CATEGORIES) {
     await db
       .insert(calendarCategories)
-      .values({ userId: user.id, name, color, isDefault: true })
-      .onConflictDoNothing({ target: [calendarCategories.userId, calendarCategories.name] });
+      .values({ userId: user.id, name, color, scope: "calendar", icon: "tag", isDefault: true })
+      .onConflictDoNothing({ target: [calendarCategories.userId, calendarCategories.scope, calendarCategories.name] });
   }
   await db.update(users).set({ calendarCategoriesSeeded: true, updatedAt: new Date() }).where(eq(users.id, user.id));
 }
@@ -42,7 +42,7 @@ export async function getCalendarData() {
   ]);
 
   return {
-    categories: categories.map(({ id, name, color, isDefault }) => ({ id, name, color, isDefault })),
+    categories: categories.map(({ id, name, color, scope, icon, isDefault }) => ({ id, name, color, scope: scope as "calendar" | "task" | "reminder", icon, isDefault })),
     items: items.map((item) => ({
       id: item.id,
       categoryId: item.categoryId,
@@ -141,7 +141,11 @@ export async function saveCalendarItemAction(
     const [category] = await db
       .select({ id: calendarCategories.id })
       .from(calendarCategories)
-      .where(and(eq(calendarCategories.id, input.categoryId), eq(calendarCategories.userId, user.id)))
+      .where(and(
+        eq(calendarCategories.id, input.categoryId),
+        eq(calendarCategories.userId, user.id),
+        eq(calendarCategories.scope, input.type === "reminder" ? "reminder" : "calendar"),
+      ))
       .limit(1);
     if (!category) throw new Error("That category is not available.");
   }
@@ -225,7 +229,7 @@ export async function createCalendarCategoryAction(name: string, color: string) 
   const cleanName = name.trim();
   if (!cleanName || cleanName.length > 40) throw new Error("Enter a category name up to 40 characters.");
   if (!CATEGORY_COLORS.includes(color as (typeof CATEGORY_COLORS)[number])) throw new Error("Choose a supported color.");
-  await db.insert(calendarCategories).values({ userId: user.id, name: cleanName, color, isDefault: false });
+  await db.insert(calendarCategories).values({ userId: user.id, name: cleanName, color, scope: "task", icon: "tag", isDefault: false });
   revalidatePath("/calendar");
 }
 

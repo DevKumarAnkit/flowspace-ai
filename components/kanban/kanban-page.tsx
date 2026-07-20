@@ -51,18 +51,20 @@ import {
   updateKanbanLabelAction,
 } from "@/app/kanban/actions";
 import { KANBAN_COLORS, todayLocal, type KanbanBoard, type KanbanData, type KanbanPriority, type KanbanTask, type KanbanTaskInput } from "@/lib/kanban-types";
+import type { UserCategory } from "@/lib/settings-domain";
 import { announceKanbanMutation, CollaborationToolbar, KanbanRoom, TaskCommentBadge, TaskComments } from "@/components/kanban/collaboration";
 
 type TaskDraft = KanbanTaskInput;
 
-function emptyTask(boardId: number, columnId: number): TaskDraft {
+function emptyTask(boardId: number, columnId: number, priority: KanbanPriority): TaskDraft {
   return {
     boardId,
     columnId,
     title: "",
     description: "",
     dueDate: todayLocal(),
-    priority: "medium",
+    priority,
+    categoryId: null,
     notesLinked: false,
     calendarSync: false,
     labelIds: [],
@@ -79,6 +81,7 @@ function taskDraft(task: KanbanTask): TaskDraft {
     description: task.description,
     dueDate: task.dueDate,
     priority: task.priority,
+    categoryId: task.categoryId,
     notesLinked: task.notesLinked,
     calendarSync: task.calendarItemId != null,
     labelIds: task.labels.map((label) => label.id),
@@ -86,7 +89,7 @@ function taskDraft(task: KanbanTask): TaskDraft {
   };
 }
 
-export function KanbanPage({ initialData, initialSelectedBoardId, initialToday }: { initialData: KanbanData; initialSelectedBoardId: number | null; initialToday: string }) {
+export function KanbanPage({ initialData, initialSelectedBoardId, initialToday, defaultPriority, categories }: { initialData: KanbanData; initialSelectedBoardId: number | null; initialToday: string; defaultPriority: KanbanPriority; categories: UserCategory[] }) {
   const router = useRouter();
   const [boards, setBoards] = useState(initialData.boards);
   const [selectedId, setSelectedId] = useState(initialSelectedBoardId);
@@ -215,7 +218,7 @@ export function KanbanPage({ initialData, initialSelectedBoardId, initialToday }
             </div>
             <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setActiveTask(null)}>
               <div className="kanban-columns">
-                {selected.columns.map((column) => <KanbanColumnView key={column.id} column={column} today={initialToday} canDelete={selected.columns.length > 1} pending={pending} onAdd={() => { setFocusComments(false); setTaskEditor(emptyTask(selected.id, column.id)); }} onEditTask={(task) => { setFocusComments(false); setTaskEditor(taskDraft(task)); }} onComment={(task) => { setFocusComments(true); setTaskEditor(taskDraft(task)); }} onRename={() => setRenameColumn({ id: column.id, name: column.name })} onDelete={() => setDeleteColumn(column.id)} />)}
+                {selected.columns.map((column) => <KanbanColumnView key={column.id} column={column} today={initialToday} canDelete={selected.columns.length > 1} pending={pending} onAdd={() => { setFocusComments(false); setTaskEditor(emptyTask(selected.id, column.id, defaultPriority)); }} onEditTask={(task) => { setFocusComments(false); setTaskEditor(taskDraft(task)); }} onComment={(task) => { setFocusComments(true); setTaskEditor(taskDraft(task)); }} onRename={() => setRenameColumn({ id: column.id, name: column.name })} onDelete={() => setDeleteColumn(column.id)} />)}
               </div>
               <DragOverlay>{activeTask ? <TaskCardBody task={activeTask} today={initialToday} dragging /> : null}</DragOverlay>
             </DndContext>
@@ -232,7 +235,7 @@ export function KanbanPage({ initialData, initialSelectedBoardId, initialToday }
         const fallback = boards[index + 1] ?? boards[index - 1];
         mutate(() => deleteKanbanBoardAction(boardEditor.id), "Board deleted.", () => { setBoards((current) => current.filter((board) => board.id !== boardEditor.id)); setBoardEditor(null); if (fallback) chooseBoard(fallback.id); else { setSelectedId(null); router.push("/kanban"); } });
       }} />}
-      {taskEditor && selected && focusComments && taskEditor.id ? <CommentsDialog taskId={taskEditor.id} close={() => setTaskEditor(null)} /> : taskEditor && selected && <TaskDialog draft={taskEditor} board={selected} pending={pending} close={() => setTaskEditor(null)} save={(draft) => mutate(() => saveKanbanTaskAction(draft), draft.id ? "Task updated." : "Task created.", () => setTaskEditor(null))} remove={taskEditor.id ? () => {
+      {taskEditor && selected && focusComments && taskEditor.id ? <CommentsDialog taskId={taskEditor.id} close={() => setTaskEditor(null)} /> : taskEditor && selected && <TaskDialog draft={taskEditor} board={selected} categories={categories} pending={pending} close={() => setTaskEditor(null)} save={(draft) => mutate(() => saveKanbanTaskAction(draft), draft.id ? "Task updated." : "Task created.", () => setTaskEditor(null))} remove={taskEditor.id ? () => {
         if (window.confirm(`Delete “${taskEditor.title}”?`)) mutate(() => deleteKanbanTaskAction(taskEditor.id!), "Task deleted.", () => setTaskEditor(null));
       } : undefined} mutate={mutate} />}
       {deleteColumn && selected && <DeleteColumnDialog board={selected} columnId={deleteColumn} pending={pending} close={() => setDeleteColumn(null)} confirm={() => mutate(() => deleteKanbanColumnAction(selected.id, deleteColumn), "Column deleted.", (value) => {
@@ -329,7 +332,7 @@ function DialogHead({ icon, title, subtitle, close }: { icon: ReactNode; title: 
   return <div className="kanban-dialog-head"><div><span>{icon}</span><div><h2>{title}</h2><p>{subtitle}</p></div></div><button type="button" onClick={close} aria-label="Close"><X size={17} /></button></div>;
 }
 
-function TaskDialog({ draft: initial, board, pending, close, save, remove, mutate }: { draft: TaskDraft; board: KanbanBoard; pending: boolean; close: () => void; save: (draft: TaskDraft) => void; remove?: () => void; mutate: (action: () => Promise<unknown>, success?: string, after?: (value: unknown) => void) => void }) {
+function TaskDialog({ draft: initial, board, categories, pending, close, save, remove, mutate }: { draft: TaskDraft; board: KanbanBoard; categories: UserCategory[]; pending: boolean; close: () => void; save: (draft: TaskDraft) => void; remove?: () => void; mutate: (action: () => Promise<unknown>, success?: string, after?: (value: unknown) => void) => void }) {
   const [draft, setDraft] = useState(initial);
   const [labelName, setLabelName] = useState("");
   const [labelColor, setLabelColor] = useState<string>(KANBAN_COLORS[0]);
@@ -342,6 +345,7 @@ function TaskDialog({ draft: initial, board, pending, close, save, remove, mutat
       <label className="field field-full"><span>Title</span><input autoFocus maxLength={160} value={draft.title} onChange={(event) => update("title", event.target.value)} placeholder="What needs doing?" /></label>
       <label className="field field-full"><span>Description</span><textarea rows={3} maxLength={4000} value={draft.description} onChange={(event) => update("description", event.target.value)} placeholder="Add helpful context…" /></label>
       <div className="task-field-row"><label className="field"><span>Due date</span><input type="date" value={draft.dueDate} onChange={(event) => update("dueDate", event.target.value)} /></label><label className="field"><span>Priority</span><select value={draft.priority} onChange={(event) => update("priority", event.target.value as KanbanPriority)}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label></div>
+      <label className="field field-full"><span>Category</span><select value={draft.categoryId ?? ""} onChange={(event) => update("categoryId", event.target.value ? Number(event.target.value) : null)}><option value="">Uncategorized</option>{categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>
       <div className="field field-full"><span>Labels</span><div className="label-picker">{board.labels.map((label) => { const selected = draft.labelIds.includes(label.id); return <div className={`label-option ${selected ? "selected" : ""}`} key={label.id}><button type="button" onClick={() => update("labelIds", selected ? draft.labelIds.filter((id) => id !== label.id) : [...draft.labelIds, label.id])}><i style={{ background: label.color }} />{label.name}{selected && <Check size={12} />}</button><button type="button" aria-label={`Edit ${label.name}`} onClick={() => setEditLabel({ id: label.id, name: label.name, color: label.color })}><Pencil size={11} /></button><button type="button" aria-label={`Delete ${label.name}`} onClick={() => { if (window.confirm(`Delete label “${label.name}”?`)) { update("labelIds", draft.labelIds.filter((id) => id !== label.id)); mutate(() => deleteKanbanLabelAction(board.id, label.id), "Label deleted."); } }}><X size={11} /></button></div>; })}</div>
         {editLabel && <div className="edit-label-row"><input autoFocus maxLength={40} value={editLabel.name} onChange={(event) => setEditLabel({ ...editLabel, name: event.target.value })} /><div>{KANBAN_COLORS.map((color) => <button key={color} type="button" aria-label={`Use ${color}`} className={editLabel.color === color ? "active" : ""} style={{ background: color }} onClick={() => setEditLabel({ ...editLabel, color })} />)}</div><button type="button" disabled={!editLabel.name.trim() || pending} onClick={() => mutate(() => updateKanbanLabelAction(board.id, editLabel.id, editLabel.name, editLabel.color), "Label updated.", () => setEditLabel(null))}><Check size={13} /> Save</button><button type="button" aria-label="Cancel label edit" onClick={() => setEditLabel(null)}><X size={13} /></button></div>}
         <div className="new-label-row"><input maxLength={40} value={labelName} onChange={(event) => setLabelName(event.target.value)} placeholder="New label" /><div>{KANBAN_COLORS.map((color) => <button key={color} type="button" aria-label={`Use ${color}`} className={labelColor === color ? "active" : ""} style={{ background: color }} onClick={() => setLabelColor(color)} />)}</div><button type="button" disabled={!labelName.trim() || pending} onClick={() => mutate(() => createKanbanLabelAction(board.id, labelName, labelColor), "Label created.", (value) => { const label = value as { id: number }; setLabelName(""); update("labelIds", [...draft.labelIds, label.id]); })}><Tag size={13} /> Add</button></div>

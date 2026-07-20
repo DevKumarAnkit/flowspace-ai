@@ -1,6 +1,19 @@
-import { clerkMiddleware } from "@clerk/nextjs/server";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-export default clerkMiddleware();
+const isWorkspaceRoute = createRouteMatcher([
+  "/",
+  "/calendar(.*)",
+  "/kanban(.*)",
+  "/notes(.*)",
+  "/settings(.*)",
+  "/whiteboard(.*)",
+  "/spaces(.*)",
+  "/ai-template-builder(.*)",
+]);
+
+export default clerkMiddleware(async (auth, request) => {
+  if (isWorkspaceRoute(request)) await auth.protect();
+});
 
 export const config = {
   matcher: [

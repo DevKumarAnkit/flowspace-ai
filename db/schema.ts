@@ -28,6 +28,23 @@ export const users = pgTable("users", {
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 
+export const userSettings = pgTable("user_settings", {
+  userId: integer("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  theme: text("theme").default("system").notNull(),
+  notifications: jsonb("notifications").$type<Record<string, boolean>>().default({}).notNull(),
+  defaultCalendarView: text("default_calendar_view").default("month").notNull(),
+  defaultTaskPriority: text("default_task_priority").default("medium").notNull(),
+  autoSave: boolean("auto_save").default(true).notNull(),
+  aiModel: text("ai_model").default("gemini-3.5-flash").notNull(),
+  aiBehavior: text("ai_behavior").default("balanced").notNull(),
+  aiTone: text("ai_tone").default("professional").notNull(),
+  aiFeatures: jsonb("ai_features").$type<Record<string, boolean>>().default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type UserSettingsRow = typeof userSettings.$inferSelect;
+
 export const calendarCategories = pgTable(
   "calendar_categories",
   {
@@ -35,11 +52,14 @@ export const calendarCategories = pgTable(
     userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     color: text("color").notNull(),
+    scope: text("scope").default("calendar").notNull(),
+    icon: text("icon").default("tag").notNull(),
+    position: integer("position").default(0).notNull(),
     isDefault: boolean("is_default").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [uniqueIndex("calendar_categories_user_name_idx").on(table.userId, table.name)],
+  (table) => [uniqueIndex("calendar_categories_user_scope_name_idx").on(table.userId, table.scope, table.name)],
 );
 
 export const calendarItems = pgTable("calendar_items", {
@@ -132,6 +152,7 @@ export const kanbanTasks = pgTable(
     description: text("description"),
     dueDate: date("due_date").notNull(),
     priority: text("priority").notNull(),
+    categoryId: integer("category_id").references(() => calendarCategories.id, { onDelete: "set null" }),
     position: integer("position").default(0).notNull(),
     notesLinked: boolean("notes_linked").default(false).notNull(),
     calendarItemId: integer("calendar_item_id").references(() => calendarItems.id, { onDelete: "set null" }),
@@ -171,6 +192,7 @@ export const notes = pgTable(
   {
     id: serial("id").primaryKey(),
     userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    categoryId: integer("category_id").references(() => calendarCategories.id, { onDelete: "set null" }),
     title: text("title").notNull(),
     content: jsonb("content").$type<Record<string, unknown>>().notNull(),
     color: text("color").notNull(),

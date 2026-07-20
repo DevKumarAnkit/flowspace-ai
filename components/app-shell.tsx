@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useClerk, useUser } from "@clerk/nextjs";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowUpRight,
@@ -53,11 +54,13 @@ const navigation: Array<{ label: string; items: NavigationItem[] }> = [
       { label: "AI Template Builder", icon: LayoutTemplate, color: "icon-pink", badge: "AI", href: "/ai-template-builder" },
     ],
   },
-  { label: "System", items: [{ label: "Settings", icon: Settings, color: "icon-slate" }] },
+  { label: "System", items: [{ label: "Settings", icon: Settings, color: "icon-slate", href: "/settings" }] },
 ];
 
 export function AppShell({ title, children }: { title: string; children: ReactNode }) {
   const pathname = usePathname();
+  const { user } = useUser();
+  const clerk = useClerk();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pinnedApps, setPinnedApps] = useState<GeneratedApp[]>([]);
@@ -107,10 +110,10 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
           </div>}
         </nav>
         <div className="sidebar-footer">
-          {!collapsed && <div className="upgrade-card"><div className="upgrade-icon"><WandSparkles size={16} /></div><strong>Unlock your flow</strong><span>Get unlimited AI & spaces.</span><button>Explore Pro <ArrowUpRight size={13} /></button></div>}
-          <button className="profile-row" title={collapsed ? "Avery Morgan" : undefined}>
-            <span className="profile-avatar">AM<span /></span>
-            {!collapsed && <><span className="profile-copy"><strong>Avery Morgan</strong><small>avery@acme.co</small></span><MoreHorizontal size={16} /></>}
+          {!collapsed && <div className="upgrade-card"><div className="upgrade-icon"><WandSparkles size={16} /></div><strong>Unlock your flow</strong><span>Get unlimited AI & spaces.</span><Link href="/settings?section=subscription">Explore Pro <ArrowUpRight size={13} /></Link></div>}
+          <button className="profile-row" title={collapsed ? user?.fullName ?? "Profile" : undefined} onClick={() => clerk.openUserProfile()}>
+            <span className="profile-avatar">{user?.imageUrl ? <img src={user.imageUrl} alt="" /> : (user?.fullName ?? "F U").split(" ").map((part) => part[0]).join("").slice(0, 2)}<span /></span>
+            {!collapsed && <><span className="profile-copy"><strong>{user?.fullName ?? "Flowspace user"}</strong><small>{user?.primaryEmailAddress?.emailAddress ?? "Your account"}</small></span><MoreHorizontal size={16} /></>}
           </button>
         </div>
         <button className="collapse-button" aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={() => setCollapsed(!collapsed)}>{collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}</button>
