@@ -1,5 +1,3 @@
-import { currentUser } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { NotesPage } from "@/components/notes/notes-page";
 import { getNotesData } from "@/app/notes/actions";
@@ -9,7 +7,6 @@ import { hasProAccess } from "@/lib/billing";
 export const dynamic = "force-dynamic";
 
 export default async function NotesRoute({ searchParams }: { searchParams: Promise<{ note?: string }> }) {
-  if (!(await currentUser())) redirect("/sign-in");
   const [notes, params, categories, { settings }, pro] = await Promise.all([getNotesData(), searchParams, getUserCategories("note"), getUserSettings(), hasProAccess()]);
   const requested = Number(params.note);
   const selectedNoteId = notes.some((note) => note.id === requested) ? requested : notes.find((note) => !note.trashedAt)?.id ?? null;

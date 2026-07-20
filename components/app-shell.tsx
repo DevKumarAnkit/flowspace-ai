@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useClerk, useUser } from "@clerk/nextjs";
 import { useEffect, useState, type ReactNode } from "react";
 import {
@@ -59,6 +59,7 @@ const navigation: Array<{ label: string; items: NavigationItem[] }> = [
 
 export function AppShell({ title, children }: { title: string; children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { user } = useUser();
   const clerk = useClerk();
   const [collapsed, setCollapsed] = useState(false);
@@ -81,9 +82,9 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
           {!collapsed && <span className="brand-name">Flowspace</span>}
           <button className="mobile-close" aria-label="Close menu" onClick={() => setMobileOpen(false)}><X size={18} /></button>
         </div>
-        <button className="workspace-switcher" title={collapsed ? "Acme Studio" : undefined}>
+        <button className="workspace-switcher" title={collapsed ? "Developed by 2024UGEC085" : undefined}>
           <span className="workspace-avatar">A</span>
-          {!collapsed && <><span className="workspace-copy"><strong>Acme Studio</strong><small>Free workspace</small></span><ChevronDown size={14} /></>}
+          {!collapsed && <><span className="workspace-copy"><strong>Developed by</strong><small>2024UGEC085</small></span><ChevronDown size={14} /></>}
         </button>
         <nav className="sidebar-nav" aria-label="Main navigation">
           {navigation.map((group) => (
@@ -94,7 +95,7 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
                 const active = item.href ? (item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)) : false;
                 const contents = <><span className={`nav-icon ${item.color}`}><Icon size={16} strokeWidth={2.1} /></span>{!collapsed && <><span>{item.label}</span>{item.badge && <em>{item.badge}</em>}</>}</>;
                 return item.href ? (
-                  <Link className={`nav-item ${active ? "active" : ""}`} href={item.href} key={item.label} title={collapsed ? item.label : undefined} onClick={() => setMobileOpen(false)}>{contents}</Link>
+                  <Link className={`nav-item ${active ? "active" : ""}`} href={item.href} key={item.label} title={collapsed ? item.label : undefined} prefetch onMouseEnter={() => router.prefetch(item.href!)} onFocus={() => router.prefetch(item.href!)} onClick={() => setMobileOpen(false)}>{contents}</Link>
                 ) : (
                   <button className="nav-item" key={item.label} title={collapsed ? item.label : undefined}>{contents}</button>
                 );
@@ -104,7 +105,7 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
           {pinnedApps.length > 0 && <div className="nav-group generated-nav-group">
             {!collapsed && <p className="nav-label">My AI Apps <span>{pinnedApps.length}/3</span></p>}
             {pinnedApps.map((app) => { const Icon = generatedAppIcons[app.definition.icon]; const active = pathname === `/ai-template-builder/${app.id}`; return <div className={`generated-nav-row ${active ? "active" : ""}`} key={app.id}>
-              <Link className="nav-item" href={`/ai-template-builder/${app.id}`} title={collapsed ? app.definition.appName : undefined} onClick={() => setMobileOpen(false)}><span className="nav-icon" style={{ color: app.definition.color, background: `${app.definition.color}18` }}><Icon size={16} /></span>{!collapsed && <span>{app.definition.appName}</span>}</Link>
+              <Link className="nav-item" href={`/ai-template-builder/${app.id}`} title={collapsed ? app.definition.appName : undefined} prefetch onMouseEnter={() => router.prefetch(`/ai-template-builder/${app.id}`)} onFocus={() => router.prefetch(`/ai-template-builder/${app.id}`)} onClick={() => setMobileOpen(false)}><span className="nav-icon" style={{ color: app.definition.color, background: `${app.definition.color}18` }}><Icon size={16} /></span>{!collapsed && <span>{app.definition.appName}</span>}</Link>
               {!collapsed && <button aria-label={`Remove ${app.definition.appName} from sidebar`} onClick={() => unpin(app.id)}><X size={12} /></button>}
             </div>; })}
           </div>}
