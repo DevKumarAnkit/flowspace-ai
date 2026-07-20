@@ -1,0 +1,1 @@
+export default function Loading() { return <div className="route-loading"><div className="route-loading-bar" /><div className="route-loading-grid"><span /><span /><span /><span /><span /><span /></div></div>; }
