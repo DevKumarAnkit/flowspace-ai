@@ -1,5 +1,6 @@
 import {
   boolean,
+  check,
   date,
   integer,
   index,
@@ -11,6 +12,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -275,3 +277,24 @@ export const spacePageTaskLinks = pgTable(
 export type SpaceRow = typeof spaces.$inferSelect;
 export type SpacePageRow = typeof spacePages.$inferSelect;
 export type SpaceMemberRow = typeof spaceMembers.$inferSelect;
+
+export const generatedApps = pgTable(
+  "generated_apps",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    prompt: text("prompt").notNull(),
+    definition: jsonb("definition").$type<Record<string, unknown>>().notNull(),
+    state: jsonb("state").$type<Record<string, unknown>>().notNull(),
+    sidebarPosition: integer("sidebar_position"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("generated_apps_user_created_idx").on(table.userId, table.createdAt),
+    uniqueIndex("generated_apps_user_sidebar_idx").on(table.userId, table.sidebarPosition),
+    check("generated_apps_sidebar_position_check", sql`${table.sidebarPosition} is null or (${table.sidebarPosition} >= 0 and ${table.sidebarPosition} <= 2)`),
+  ],
+);
+
+export type GeneratedAppRow = typeof generatedApps.$inferSelect;

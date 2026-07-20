@@ -71,6 +71,13 @@
       "when": 1784516187619,
       "tag": "0009_modern_salo",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784522457299,
+      "tag": "0010_tough_juggernaut",
+      "breakpoints": true
     }
   ]
 }
