@@ -201,3 +201,77 @@ export const whiteboards = pgTable(
 );
 
 export type WhiteboardRow = typeof whiteboards.$inferSelect;
+
+export const spaces = pgTable(
+  "spaces",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    color: text("color").notNull(),
+    isFavorite: boolean("is_favorite").default(false).notNull(),
+    lastOpenedAt: timestamp("last_opened_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("spaces_user_updated_idx").on(table.userId, table.updatedAt),
+    index("spaces_user_archived_idx").on(table.userId, table.archivedAt),
+  ],
+);
+
+export const spacePages = pgTable(
+  "space_pages",
+  {
+    id: serial("id").primaryKey(),
+    spaceId: integer("space_id").notNull().references(() => spaces.id, { onDelete: "cascade" }),
+    createdByUserId: integer("created_by_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    updatedByUserId: integer("updated_by_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    template: text("template").notNull(),
+    content: jsonb("content").$type<Record<string, unknown>>().notNull(),
+    isFavorite: boolean("is_favorite").default(false).notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("space_pages_space_updated_idx").on(table.spaceId, table.updatedAt),
+    index("space_pages_space_archived_idx").on(table.spaceId, table.archivedAt),
+  ],
+);
+
+export const spaceMembers = pgTable(
+  "space_members",
+  {
+    id: serial("id").primaryKey(),
+    spaceId: integer("space_id").notNull().references(() => spaces.id, { onDelete: "cascade" }),
+    userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    role: text("role").default("editor").notNull(),
+    invitedByUserId: integer("invited_by_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("space_members_space_email_idx").on(table.spaceId, table.email),
+    uniqueIndex("space_members_space_user_idx").on(table.spaceId, table.userId),
+  ],
+);
+
+export const spacePageTaskLinks = pgTable(
+  "space_page_task_links",
+  {
+    pageId: integer("page_id").notNull().references(() => spacePages.id, { onDelete: "cascade" }),
+    taskId: integer("task_id").notNull().references(() => kanbanTasks.id, { onDelete: "cascade" }),
+    createdByUserId: integer("created_by_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.pageId, table.taskId] })],
+);
+
+export type SpaceRow = typeof spaces.$inferSelect;
+export type SpacePageRow = typeof spacePages.$inferSelect;
+export type SpaceMemberRow = typeof spaceMembers.$inferSelect;

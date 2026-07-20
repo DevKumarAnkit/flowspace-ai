@@ -2,11 +2,12 @@
 
 import { LiveblocksProvider } from "@liveblocks/react/suspense";
 import type { ReactNode } from "react";
+import { getLiveblocksAuthentication } from "@/lib/liveblocks-client-auth";
 
 export function FlowspaceLiveblocksProvider({ children }: { children: ReactNode }) {
   return (
     <LiveblocksProvider
-      authEndpoint="/api/liveblocks-auth"
+      authEndpoint={getLiveblocksAuthentication}
       resolveUsers={async ({ userIds }) => {
         const response = await fetch("/api/liveblocks-users", {
           method: "POST",

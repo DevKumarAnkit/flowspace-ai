@@ -14,7 +14,7 @@ import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import CharacterCount from "@tiptap/extension-character-count";
 import {
-  ArrowLeft, Bold, BookOpen, Briefcase, Check, CheckSquare, ChevronDown, Code2, Copy, FileText, Heading1, Heading2,
+  ArrowLeft, Bold, BookOpen, Briefcase, Check, CheckSquare, ChevronDown, Code2, Copy, Download, FileText, Heading1, Heading2,
   Heading3, Highlighter, Italic, Lightbulb, Link2, List, ListOrdered, LoaderCircle, MoreHorizontal, Palette,
   Mic, Pin, Plus, Quote, Redo2, RefreshCcw, RotateCcw, Search, Sparkles, Strikethrough, Trash2, Underline as UnderlineIcon,
   Star, Undo2, WandSparkles, X,
@@ -257,6 +257,20 @@ function NoteEditor({ note, onSaved, registerFlush, back }: { note: Note; onSave
   }, [editor]);
 
   const voice = useAssemblyAIStreaming({ onFinalTranscript: insertVoiceTranscript });
+  const exportNote = () => {
+    if (!editor) return;
+    const safeTitle = title.replace(/[<>&"]/g, "");
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${safeTitle}</title></head><body><h1>${safeTitle}</h1>${editor.getHTML()}</body></html>`;
+    const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+    const anchor = window.document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "note"}.html`;
+    anchor.style.display = "none";
+    window.document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
 
   const flush = useCallback(async () => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
@@ -329,6 +343,7 @@ function NoteEditor({ note, onSaved, registerFlush, back }: { note: Note; onSave
         <span className="voice-mic"><Mic size={13} /></span>
         <span>{voice.status === "stopping" ? "Stopping…" : voice.isRecording ? "Stop Recording" : "Speak to Note"}</span>
       </button>
+      <button type="button" className="export-note" onClick={exportNote}><Download size={14} /><span>Export</span></button>
       <div className={`save-state ${status}`} title={status === "error" ? "Save failed" : undefined}>
         {status === "saving" ? <LoaderCircle className="spin" size={12} /> : status === "error" ? <button onClick={() => void flush().catch(() => undefined)}><RotateCcw size={12} /> Retry</button> : <Check size={12} />}
         {status === "saving" ? "Saving…" : status === "error" ? "Couldn't save" : status === "dirty" ? "Unsaved" : "Saved"}
