@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowUpRight,
   Bell,
@@ -29,6 +29,9 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import { getPinnedGeneratedAppsAction, removeGeneratedAppFromSidebarAction } from "@/app/ai-template-builder/actions";
+import { generatedAppIcons } from "@/components/ai-template-builder/generated-app-icons";
+import type { GeneratedApp } from "@/lib/generated-app-domain";
 
 type NavigationItem = { label: string; icon: LucideIcon; color: string; href?: string; badge?: string };
 const navigation: Array<{ label: string; items: NavigationItem[] }> = [
@@ -47,7 +50,7 @@ const navigation: Array<{ label: string; items: NavigationItem[] }> = [
       { label: "Notes", icon: StickyNote, color: "icon-green", href: "/notes" },
       { label: "Whiteboard", icon: MousePointer2, color: "icon-cyan", href: "/whiteboard" },
       { label: "Pages / Spaces", icon: FileText, color: "icon-orange", href: "/spaces" },
-      { label: "AI Template Builder", icon: LayoutTemplate, color: "icon-pink", badge: "AI" },
+      { label: "AI Template Builder", icon: LayoutTemplate, color: "icon-pink", badge: "AI", href: "/ai-template-builder" },
     ],
   },
   { label: "System", items: [{ label: "Settings", icon: Settings, color: "icon-slate" }] },
@@ -57,6 +60,14 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [pinnedApps, setPinnedApps] = useState<GeneratedApp[]>([]);
+  useEffect(() => {
+    let active = true;
+    const load = () => getPinnedGeneratedAppsAction().then((apps) => { if (active) setPinnedApps(apps); }).catch(() => undefined);
+    load(); window.addEventListener("generated-sidebar-change", load);
+    return () => { active = false; window.removeEventListener("generated-sidebar-change", load); };
+  }, []);
+  async function unpin(id: number) { try { await removeGeneratedAppFromSidebarAction(id); setPinnedApps((current) => current.filter((app) => app.id !== id)); } catch { /* Card-level controls surface mutation errors. */ } }
 
   return (
     <div className="app-shell">
@@ -87,6 +98,13 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
               })}
             </div>
           ))}
+          {pinnedApps.length > 0 && <div className="nav-group generated-nav-group">
+            {!collapsed && <p className="nav-label">My AI Apps <span>{pinnedApps.length}/3</span></p>}
+            {pinnedApps.map((app) => { const Icon = generatedAppIcons[app.definition.icon]; const active = pathname === `/ai-template-builder/${app.id}`; return <div className={`generated-nav-row ${active ? "active" : ""}`} key={app.id}>
+              <Link className="nav-item" href={`/ai-template-builder/${app.id}`} title={collapsed ? app.definition.appName : undefined} onClick={() => setMobileOpen(false)}><span className="nav-icon" style={{ color: app.definition.color, background: `${app.definition.color}18` }}><Icon size={16} /></span>{!collapsed && <span>{app.definition.appName}</span>}</Link>
+              {!collapsed && <button aria-label={`Remove ${app.definition.appName} from sidebar`} onClick={() => unpin(app.id)}><X size={12} /></button>}
+            </div>; })}
+          </div>}
         </nav>
         <div className="sidebar-footer">
           {!collapsed && <div className="upgrade-card"><div className="upgrade-icon"><WandSparkles size={16} /></div><strong>Unlock your flow</strong><span>Get unlimited AI & spaces.</span><button>Explore Pro <ArrowUpRight size={13} /></button></div>}
