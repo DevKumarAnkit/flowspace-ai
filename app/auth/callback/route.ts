@@ -6,10 +6,11 @@ export async function GET(request: NextRequest) {
   const user = await currentUser();
 
   if (!user) {
-    return NextResponse.redirect(new URL("/sign-in", request.url));
+    return NextResponse.redirect(new URL("/log-in", request.url));
   }
 
   await syncUser(user);
 
-  return NextResponse.redirect(new URL("/", request.url));
+  const next = request.nextUrl.searchParams.get("next");
+  return NextResponse.redirect(new URL(next === "/checkout" ? next : "/dashboard", request.url));
 }
