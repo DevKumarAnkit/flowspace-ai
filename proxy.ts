@@ -1,7 +1,7 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 const isWorkspaceRoute = createRouteMatcher([
-  "/",
+  "/dashboard(.*)",
   "/calendar(.*)",
   "/kanban(.*)",
   "/notes(.*)",
