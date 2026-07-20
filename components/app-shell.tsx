@@ -40,7 +40,7 @@ const navigation: Array<{ label: string; items: NavigationItem[] }> = [
     label: "Workspace",
     items: [
       { label: "Dashboard", icon: LayoutDashboard, color: "icon-violet", href: "/" },
-      { label: "AI Assistant", icon: Bot, color: "icon-rose" },
+      { label: "AI Assistant", icon: Bot, color: "icon-rose", href: "/assistant" },
       { label: "Calendar", icon: CalendarDays, color: "icon-blue", href: "/calendar" },
       { label: "Task / Kanban", icon: SquareKanban, color: "icon-amber", href: "/kanban" },
     ],

@@ -320,3 +320,44 @@ export const generatedApps = pgTable(
 );
 
 export type GeneratedAppRow = typeof generatedApps.$inferSelect;
+
+export const assistantConversations = pgTable(
+  "assistant_conversations",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull().default("New conversation"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("assistant_conversations_user_updated_idx").on(table.userId, table.updatedAt)],
+);
+
+export const assistantMessages = pgTable(
+  "assistant_messages",
+  {
+    id: serial("id").primaryKey(),
+    conversationId: integer("conversation_id").notNull().references(() => assistantConversations.id, { onDelete: "cascade" }),
+    role: text("role").notNull(),
+    content: text("content").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("assistant_messages_conversation_created_idx").on(table.conversationId, table.createdAt)],
+);
+
+export const assistantActionRequests = pgTable(
+  "assistant_action_requests",
+  {
+    id: serial("id").primaryKey(),
+    conversationId: integer("conversation_id").notNull().references(() => assistantConversations.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    summary: text("summary").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    status: text("status").notNull().default("pending"),
+    result: jsonb("result").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [index("assistant_actions_user_status_idx").on(table.userId, table.status)],
+);
